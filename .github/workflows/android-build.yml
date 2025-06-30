@@ -26,6 +26,7 @@ jobs:
       run: gradle -v
 
     - name: Build APK
+      working-directory: app
       run: gradle assembleDebug --stacktrace
 
     - name: Upload APK
