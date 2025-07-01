@@ -1,0 +1,15 @@
+{
+  "name": "Android SDK + OpenJDK 20",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "ms-androidtools.vscode-android"
+      ]
+    }
+  },
+  "postCreateCommand": "sdkmanager --licenses || true"
+}
