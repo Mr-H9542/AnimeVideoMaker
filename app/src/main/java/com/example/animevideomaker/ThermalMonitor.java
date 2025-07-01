@@ -42,8 +42,8 @@ public class ThermalMonitor {
     }
 
     public void startMonitoring() {
-        if (batteryManager == null) {
-            Log.e(TAG, "BatteryManager not available. Cannot monitor temperature.");
+        if (batteryManager == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            Log.e(TAG, "BatteryManager not supported or API level < 24. Cannot monitor temperature.");
             return;
         }
         handler.post(thermalCheckTask);
@@ -54,7 +54,7 @@ public class ThermalMonitor {
     }
 
     private float readBatteryTemperature() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && batteryManager != null) {
             int rawTemp = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_TEMPERATURE);
             return rawTemp / 10f;
         } else {
@@ -62,4 +62,4 @@ public class ThermalMonitor {
             return -1f;
         }
     }
-            }
+}
