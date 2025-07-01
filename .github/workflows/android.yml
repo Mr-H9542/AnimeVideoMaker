@@ -51,7 +51,6 @@ jobs:
           unzip cmdline-tools.zip -d ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools
           mv ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/cmdline-tools ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest
           rm -f cmdline-tools.zip
-          ls -R ${{ env.ANDROID_SDK_ROOT }}
 
       - name: Accept Android SDK licenses
         run: yes | ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest/bin/sdkmanager --licenses
@@ -99,16 +98,18 @@ jobs:
           fi
         continue-on-error: true
 
-      - name: List test results directory (for debugging)
+      - name: List test results directory (safe check)
         if: always()
-        run: ls -R app/build/test-results/
+        run: |
+          mkdir -p app/build/test-results/
+          ls -R app/build/test-results/
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: app/build/test-results/**/*.xml
+          path: app/build/test-results/testDebugUnitTest/**/*.xml
           if-no-files-found: warn
 
       - name: Upload Gradle build reports
