@@ -4,65 +4,70 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Represents an animated scene with background and a single character.
+ * Represents an animated scene with a background and one or more characters.
  */
 public class Scene {
+
     private Bitmap background;
-    private Character character;
+    private final List<Character> characters = new ArrayList<>();
     private int durationSeconds = 5;
 
+    // Default constructor initializes with a black background
     public Scene() {
-        setBackgroundColor("black");  // Default background
+        setBackgroundColor("black");
     }
 
-    /**
-     * Optional constructor to set background bitmap directly.
-     */
+    // Optional constructor to accept a pre-made background bitmap
     public Scene(Bitmap background) {
         this.background = background;
     }
 
     /**
-     * Sets background color by name, creates a bitmap with that color.
+     * Sets a solid color background using a color name.
+     * Accepts: white, red, blue, gray, black (default).
      */
     public void setBackgroundColor(String colorName) {
-        int w = 720, h = 1280;  // You can parameterize this if needed
+        int w = 720, h = 1280;
         Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bmp);
-        int c = switch (colorName.toLowerCase()) {
+        int color = switch (colorName.toLowerCase()) {
             case "white" -> Color.WHITE;
             case "red" -> Color.RED;
             case "blue" -> Color.BLUE;
             case "gray" -> Color.GRAY;
             default -> Color.BLACK;
         };
-        canvas.drawColor(c);
+        canvas.drawColor(color);
         this.background = bmp;
-    }
-
-    public Bitmap getBackground() {
-        return background;
     }
 
     public void setBackground(Bitmap background) {
         this.background = background;
     }
 
+    public Bitmap getBackground() {
+        return background;
+    }
+
     public void setCharacter(Character character) {
-        this.character = character;
+        characters.clear();
+        characters.add(character);
+    }
+
+    public void addCharacter(Character character) {
+        characters.add(character);
     }
 
     public List<Character> getCharactersByDepth() {
-        // Currently supports only one character
-        return Collections.singletonList(character);
+        return characters;
     }
 
     public void setDuration(int seconds) {
-        this.durationSeconds = seconds;
+        this.durationSeconds = Math.max(1, seconds);
     }
 
     public int getDuration() {
@@ -70,15 +75,17 @@ public class Scene {
     }
 
     /**
-     * Convenience method to configure scene from an AnimationRequest.
+     * Configures the scene based on a parsed AnimationRequest.
      */
     public void configureFromRequest(AnimationRequest req) {
         setBackgroundColor(req.background);
+
         Character c = new Character();
         c.setColor(req.characterColor);
         c.setType(req.characterType);
         c.setAction(req.action);
-        setCharacter(c);
+        setCharacter(c); // replaces all characters
+
         setDuration(req.duration);
     }
 }
