@@ -1,32 +1,36 @@
 package com.example.animevideomaker;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 public class AITextParser {
+    private static final Pattern DURATION_PATTERN = Pattern.compile("(\\d+)\\s*second");
+
     public static AnimationRequest parse(String prompt) {
         AnimationRequest req = new AnimationRequest();
+        String text = prompt.toLowerCase();
 
-        prompt = prompt.toLowerCase();
+        req.characterColor = text.contains("red") ? "red" :
+                              text.contains("blue") ? "blue" : "blue";
 
-        if (prompt.contains("red")) req.characterColor = "red";
-        if (prompt.contains("blue")) req.characterColor = "blue";
-        if (prompt.contains("star")) req.characterType = "star";
-        if (prompt.contains("ball")) req.characterType = "ball";
-        if (prompt.contains("bouncing")) req.action = "bounce";
-        if (prompt.contains("rotating")) req.action = "rotate";
-        if (prompt.contains("walking")) req.action = "walk";
-        if (prompt.contains("background")) {
-            int idx = prompt.indexOf("background");
-            String[] parts = prompt.substring(idx).split(" ");
-            if (parts.length > 0) req.background = parts[0];
+        req.characterType = text.contains("star") ? "star" :
+                             text.contains("ball") ? "ball" : "star";
+
+        req.action = text.contains("bounce") ? "bounce" :
+                     text.contains("rotate") ? "rotate" :
+                     text.contains("walk") ? "walk" : "idle";
+
+        if (text.contains("background")) {
+            int idx = text.indexOf("background");
+            String[] parts = text.substring(idx + 10).trim().split("\\s+");
+            req.background = parts.length > 0 ? parts[0] : req.background;
         }
-        if (prompt.contains("second")) {
-            String[] parts = prompt.split(" ");
-            for (int i = 0; i < parts.length; i++) {
-                if (parts[i].equals("seconds") || parts[i].equals("second")) {
-                    try {
-                        req.duration = Integer.parseInt(parts[i - 1]);
-                    } catch (Exception ignored) {}
-                }
-            }
+
+        Matcher m = DURATION_PATTERN.matcher(text);
+        if (m.find()) {
+            try {
+                req.duration = Integer.parseInt(m.group(1));
+            } catch (NumberFormatException ignored) {}
         }
 
         return req;
