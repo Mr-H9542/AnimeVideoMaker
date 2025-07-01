@@ -2,9 +2,9 @@ name: Android Build
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   build:
@@ -98,6 +98,10 @@ jobs:
             echo "No unit tests found, skipping"
           fi
         continue-on-error: true
+
+      - name: List test results directory (for debugging)
+        if: always()
+        run: ls -R app/build/test-results/
 
       - name: Upload test results
         if: always()
