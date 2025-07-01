@@ -4,8 +4,10 @@ import android.app.Activity;
 import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.os.Handler;
+import android.view.Gravity;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.Toast;
 import java.util.List;
 
 public class CharacterPreviewActivity extends Activity {
@@ -14,32 +16,44 @@ public class CharacterPreviewActivity extends Activity {
     private Handler handler = new Handler();
     private List<VideoFrame> frames;
     private int currentFrame = 0;
-    private final int FRAME_DELAY_MS = 100;  // 10 FPS
+    private static final int FRAME_DELAY_MS = 100; // 10 FPS
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // Simple fullscreen container
+        LinearLayout rootLayout = new LinearLayout(this);
+        rootLayout.setBackgroundColor(0xFF000000); // black background
+        rootLayout.setGravity(Gravity.CENTER);
+
         characterView = new ImageView(this);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.MATCH_PARENT);
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+        );
         characterView.setLayoutParams(params);
-        setContentView(characterView);
+        rootLayout.addView(characterView);
 
-        // Create a sample Character (or load from Intent extras)
-        Character character = new Character();
-        character.setColor("blue");
-        character.setType("star");
+        setContentView(rootLayout);
 
-        // Create a dummy Scene with a blank background
-        Bitmap bg = Bitmap.createBitmap(640, 480, Bitmap.Config.ARGB_8888);
-        Scene scene = new Scene(bg);
-        scene.addCharacter(character);
-        scene.setDuration(5); // 5 seconds animation
+        // Get scene from SceneHolder
+        Scene scene = SceneHolder.scene;
+
+        if (scene == null) {
+            Toast.makeText(this, "No scene provided!", Toast.LENGTH_SHORT).show();
+            finish();
+            return;
+        }
 
         // Generate frames
         frames = FrameGenerator.generate(this, scene);
+
+        if (frames == null || frames.isEmpty()) {
+            Toast.makeText(this, "No frames to display!", Toast.LENGTH_SHORT).show();
+            finish();
+            return;
+        }
 
         // Start animation loop
         handler.post(frameRunnable);
@@ -54,7 +68,6 @@ public class CharacterPreviewActivity extends Activity {
             characterView.setImageBitmap(bmp);
 
             currentFrame = (currentFrame + 1) % frames.size();
-
             handler.postDelayed(this, FRAME_DELAY_MS);
         }
     };
@@ -64,7 +77,7 @@ public class CharacterPreviewActivity extends Activity {
         super.onDestroy();
         handler.removeCallbacks(frameRunnable);
 
-        // Recycle bitmaps to free memory
+        // Free memory
         if (frames != null) {
             for (VideoFrame frame : frames) {
                 frame.recycle();
