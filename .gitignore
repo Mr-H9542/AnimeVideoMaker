@@ -1,0 +1,20 @@
+# Ignore all PNG frames and videos in common external folders (if you ever try to add them)
+*.png
+*.mp4
+
+# Ignore Android build folders
+.gradle/
+build/
+app/build/
+
+# Ignore local IDE files (Android Studio, VSCode, etc.)
+.idea/
+*.iml
+.vscode/
+
+# Ignore generated files and logs
+*.log
+*.tmp
+
+# Ignore local config files
+local.properties
