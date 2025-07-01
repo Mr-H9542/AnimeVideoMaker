@@ -1,38 +1,63 @@
 package com.example.animevideomaker;
 
 import android.app.Activity;
+import android.content.res.AssetManager;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.os.Bundle;
+import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.Toast;
+import java.io.InputStream;
 
 public class CharacterCreatorActivity extends Activity {
 
-    private ImageView characterPreview;
+    private LinearLayout characterList;
+    private AssetManager assetManager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_character_creator);
 
-        characterPreview = new ImageView(this);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.MATCH_PARENT
-        );
-        characterPreview.setLayoutParams(params);
+        characterList = findViewById(R.id.characterList);
+        assetManager = getAssets();
 
-        setContentView(characterPreview);
+        loadAndDisplayCharacters();
+    }
 
-        // Create a sample character
-        Character character = new Character();
-        character.setType("star");
-        character.setColor("blue");
+    private void loadAndDisplayCharacters() {
+        try {
+            String[] folders = assetManager.list("characters");
+            if (folders != null) {
+                for (String folder : folders) {
+                    String path = "characters/" + folder + "/idle_512.png";
+                    try (InputStream is = assetManager.open(path)) {
+                        Bitmap bmp = BitmapFactory.decodeStream(is);
 
-        // Render a single frame to preview
-        CharacterRenderer renderer = new CharacterRenderer();
-        Bitmap bitmap = renderer.renderCharacterFrame(character, 400, 400, 0, 1);
+                        ImageView imageView = new ImageView(this);
+                        imageView.setImageBitmap(bmp);
 
-        // Show preview image
-        characterPreview.setImageBitmap(bitmap);
+                        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                                ViewGroup.LayoutParams.WRAP_CONTENT,
+                                ViewGroup.LayoutParams.WRAP_CONTENT
+                        );
+                        params.setMargins(0, 16, 0, 16);
+                        imageView.setLayoutParams(params);
+
+                        // Optional: On click, show character name (folder)
+                        imageView.setOnClickListener(v ->
+                                Toast.makeText(this, "Selected: " + folder, Toast.LENGTH_SHORT).show());
+
+                        characterList.addView(imageView);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 }
