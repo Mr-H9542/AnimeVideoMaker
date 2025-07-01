@@ -1,42 +1,36 @@
 package com.example.animevideomaker;
 
-import android.content.Intent;
+import android.app.Activity;
 import android.os.Bundle;
-import android.view.View;
-import android.widget.Button;
+import android.widget.TextView;
 
-import androidx.appcompat.app.AppCompatActivity;
+import java.io.File;
+import java.util.List;
 
-public class MainActivity extends AppCompatActivity {
-
-    private Button btnCharacterCreator;
-    private Button btnSceneComposer;
-
+public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // Find buttons by ID from layout
-        btnCharacterCreator = findViewById(R.id.btnCharacterCreator);
-        btnSceneComposer = findViewById(R.id.btnSceneComposer);
+        TextView welcomeText = findViewById(R.id.welcomeText);
+        welcomeText.setText("Rendering...");
 
-        // Set click listener to open CharacterCreator activity
-        btnCharacterCreator.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Intent intent = new Intent(MainActivity.this, CharacterCreator.class);
-                startActivity(intent);
-            }
-        });
+        // Example prompt
+        String prompt = "Red ball bouncing on blue background for 5 seconds";
 
-        // Set click listener to open SceneComposer activity
-        btnSceneComposer.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Intent intent = new Intent(MainActivity.this, SceneComposer.class);
-                startActivity(intent);
-            }
-        });
+        // Step 1: Parse prompt into animation request
+        AnimationRequest request = AITextParser.parse(prompt);
+
+        // Step 2: Generate scene
+        Scene scene = new Scene();
+        scene.configureFromRequest(request); // <-- You may need to implement this method
+
+        // Step 3: Generate video frames
+        List<VideoFrame> frames = FrameGenerator.generate(scene);
+
+        // Step 4: Save first frame as test (to Movies folder)
+        File file = TextureStreamer.saveFirstFrame(frames);
+        welcomeText.setText("First frame saved to:\n" + file.getAbsolutePath());
     }
-            }
+}
