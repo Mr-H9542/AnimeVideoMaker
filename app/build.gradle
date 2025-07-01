@@ -41,6 +41,14 @@ android {
     buildFeatures {
         viewBinding true
     }
+
+    // ← Add this block here
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+            returnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
