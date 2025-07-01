@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk # Fixed typo
+      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
 
     steps:
       - name: Checkout code
@@ -69,11 +69,12 @@ jobs:
       - name: Create local.properties file
         run: echo "sdk.dir=${{ env.ANDROID_SDK_ROOT }}" > local.properties
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --warning-mode all --stacktrace --info
+      - name: Build debug APK and capture log
+        run: |
+          ./gradlew assembleDebug --warning-mode all --stacktrace --info > full_build.log 2>&1 || echo "Build failed"
         continue-on-error: true
 
-      - name: Upload APK artifact
+      - name: Upload debug APK
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -81,7 +82,15 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: warn
 
-      - name: Run unit tests
+      - name: Upload full Gradle build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-build-log
+          path: full_build.log
+          if-no-files-found: warn
+
+      - name: Run unit tests (if available)
         run: |
           if ./gradlew tasks | grep -q test; then
             ./gradlew test --warning-mode all --stacktrace --info
@@ -98,14 +107,19 @@ jobs:
           path: app/build/test-results/**/*.xml
           if-no-files-found: warn
 
-      - name: Upload Gradle logs
-        if: failure()
+      - name: Upload Gradle build reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gradle-logs
+          name: gradle-reports
           path: |
+            build/reports/problems/problems-report.html
             **/build.gradle
             **/gradle-wrapper.properties
-            app/build/outputs/**/*.log
-            build/reports/problems/problems-report.html
           if-no-files-found: warn
+
+      - name: Summarize build log errors
+        if: always()
+        run: |
+          echo "## Build Log Summary" >> $GITHUB_STEP_SUMMARY
+          grep -iE "FAILURE:|error:|exception:" full_build.log | tail -n 50 >> $GITHUB_STEP_SUMMARY || echo "No critical errors found" >> $GITHUB_STEP_SUMMARY
