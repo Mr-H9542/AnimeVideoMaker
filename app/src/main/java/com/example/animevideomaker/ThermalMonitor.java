@@ -16,6 +16,7 @@ public class ThermalMonitor {
 
     private final BatteryManager batteryManager;
     private final Handler handler;
+    private final Context context;
 
     private final Runnable thermalCheckTask = new Runnable() {
         @Override
@@ -24,9 +25,11 @@ public class ThermalMonitor {
 
             if (temperature >= CRITICAL_TEMP_C) {
                 Log.w(TAG, "CRITICAL: Overheating! Consider pausing rendering.");
+                AppNotifier.showCritical(context, "🔥 Overheating! Rendering paused.");
                 // TODO: Add rendering pause logic
             } else if (temperature >= WARNING_TEMP_C) {
                 Log.w(TAG, "WARNING: High temperature detected.");
+                AppNotifier.showWarning(context, "⚠️ Device getting warm. Reducing quality.");
                 // TODO: Add quality downgrade logic
             } else {
                 Log.d(TAG, "Temperature OK: " + temperature + "°C");
@@ -37,6 +40,7 @@ public class ThermalMonitor {
     };
 
     public ThermalMonitor(Context context) {
+        this.context = context;
         this.batteryManager = (BatteryManager) context.getSystemService(Context.BATTERY_SERVICE);
         this.handler = new Handler(Looper.getMainLooper());
     }
