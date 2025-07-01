@@ -4,61 +4,61 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.os.Bundle;
+import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.LinearLayout;
+import android.widget.Toast;
 
 public class PromptInputActivity extends Activity {
 
     EditText promptInput;
-    Button generateButton;
+    Button btnGenerate;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_prompt_input);
 
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(24, 24, 24, 24);
+        promptInput = findViewById(R.id.promptInput);
+        btnGenerate = findViewById(R.id.btnGenerate);
 
-        promptInput = new EditText(this);
-        promptInput.setHint("Enter animation prompt...");
-        layout.addView(promptInput);
+        btnGenerate.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String prompt = promptInput.getText().toString().trim();
 
-        generateButton = new Button(this);
-        generateButton.setText("Generate Animation");
-        layout.addView(generateButton);
+                if (prompt.isEmpty()) {
+                    Toast.makeText(PromptInputActivity.this, "Please enter a prompt.", Toast.LENGTH_SHORT).show();
+                    return;
+                }
 
-        setContentView(layout);
+                AnimationRequest request = AITextParser.parse(prompt);
 
-        generateButton.setOnClickListener(v -> {
-            String prompt = promptInput.getText().toString();
-            AnimationRequest request = AITextParser.parse(prompt);
+                // Build character
+                Character character = new Character();
+                character.setType(request.characterType);
+                character.setColor(request.characterColor);
+                character.setAction(request.action);
 
-            // Build character from request
-            Character character = new Character();
-            character.setType(request.characterType);
-            character.setColor(request.characterColor);
-            character.setAction(request.action);
+                // Create background
+                Bitmap bg = Bitmap.createBitmap(640, 480, Bitmap.Config.ARGB_8888);
+                Canvas canvas = new Canvas(bg);
+                int bgColor = request.background.equals("white") ? 0xFFFFFFFF : 0xFF000000;
+                canvas.drawColor(bgColor);
 
-            // Build background bitmap
-            Bitmap background = Bitmap.createBitmap(640, 480, Bitmap.Config.ARGB_8888);
-            Canvas canvas = new Canvas(background);
-            int bgColor = Color.parseColor(request.background.equals("white") ? "#FFFFFF" : "#000000");
-            canvas.drawColor(bgColor);
+                // Create scene
+                Scene scene = new Scene(bg);
+                scene.setDuration(request.duration);
+                scene.addCharacter(character);
 
-            // Build scene
-            Scene scene = new Scene(background);
-            scene.setDuration(request.duration);
-            scene.addCharacter(character);
+                // Pass scene using holder
+                SceneHolder.scene = scene;
 
-            // Pass to preview activity
-            SceneHolder.scene = scene;  // static memory holder
-
-            Intent intent = new Intent(PromptInputActivity.this, CharacterPreviewActivity.class);
-            startActivity(intent);
+                // Go to preview
+                Intent intent = new Intent(PromptInputActivity.this, CharacterPreviewActivity.class);
+                startActivity(intent);
+            }
         });
     }
 }
