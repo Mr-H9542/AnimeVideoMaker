@@ -14,7 +14,26 @@ jobs:
       ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check disk space
+        run: df -h
+        continue-on-error: true # Continue even if this step fails, for debugging
+
+      - name: Cache Android SDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}
+          key: android-sdk-${{ runner.os }}-cmdline-tools-8512546
+          restore-keys: android-sdk-${{ runner.os }}-
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/caches
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -24,36 +43,54 @@ jobs:
 
       - name: Install Android SDK command-line tools
         run: |
-          mkdir -p $ANDROID_SDK_ROOT
-          wget https://dl.google.com/android/repository/commandlinetools-linux-8512546_latest.zip -O cmdline-tools.zip
-          unzip cmdline-tools.zip -d $ANDROID_SDK_ROOT
-          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
-          mv $ANDROID_SDK_ROOT/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
+          # Clean up any existing SDK to avoid conflicts
+          rm -rf ${{ env.ANDROID_SDK_ROOT }}/*
+          # Create directory structure
+          mkdir -p ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools
+          # Download SDK tools with retries
+          wget --tries=3 --waitretry=5 --timeout=30 https://dl.google.com/android/repository/commandlinetools-linux-8512546_latest.zip -O cmdline-tools.zip || { echo "Download failed"; exit 1; }
+          # Unzip into cmdline-tools directory
+          unzip cmdline-tools.zip -d ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools
+          # Move to expected 'latest' directory
+          mv ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/cmdline-tools ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest
+          # Clean up ZIP file
+          rm -f cmdline-tools.zip
+          # Log directory structure for debugging
+          ls -R ${{ env.ANDROID_SDK_ROOT }}
 
       - name: Accept Android SDK licenses
-        run: yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses
+        run: yes | ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest/bin/sdkmanager --licenses
 
       - name: Install SDK platforms and build-tools
         run: |
-          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2"
-
-      - name: Clear Gradle cache
-        run: rm -rf ~/.gradle/caches/
+          sudo apt-get update
+          sudo apt-get install -y unzip
+          ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest/bin/sdkmanager --sdk_root=${{ env.ANDROID_SDK_ROOT }} "platform-tools" "platforms;android-33" "build-tools;33.0.2"
 
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
       - name: Create local.properties file
-        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+        run: echo "sdk.dir=${{ env.ANDROID_SDK_ROOT }}" > local.properties
 
       - name: Build debug APK
         run: ./gradlew assembleDebug
 
       - name: Upload APK artifact
+        if: success() || failure() # Upload even if build fails, for debugging
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
 
       - name: Run unit tests
         run: ./gradlew test
+
+      - name: Upload test results
+        if: success() || failure() # Upload test results even if tests fail
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+ hostile -          path: app/build/test-results/**/*.xml
+          if-no-files-found: warn
