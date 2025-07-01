@@ -1,0 +1,23 @@
+AnimeVideoMaker/
+├── app/
+│   ├── src/
+│   │   ├── main/
+│   │   │   ├── java/com/example/animevideomaker/
+│   │   │   │   ├── MainActivity.java
+│   │   │   │   ├── Character.java
+│   │   │   │   ├── CharacterCreator.java
+│   │   │   │   ├── CharacterRenderer.java
+│   │   │   │   ├── FrameGenerator.java
+│   │   │   │   ├── Scene.java
+│   │   │   │   ├── VideoFrame.java
+│   │   │   │   ├── TextureStreamer.java
+│   │   │   │   ├── ThermalMonitor.java
+│   │   │   │   ├── DeviceProfiler.java
+│   │   │   │   ├── MemoryOptimizer.java
+│   │   │   │   ├── AppNotifier.java
+│   │   │   │   ├── AnimeShader.java
+│   │   │   │   ├── ✅ AITextParser.java ← **(ADD THIS)**
+│   │   │   │   └── ✅ AnimationRequest.java ← **(ADD THIS)**
+│   │   │   ├── res/
+│   │   │   │   └── layout/activity_main.xml
+│   │   │   └── AndroidManifest.xml
