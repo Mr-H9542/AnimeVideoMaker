@@ -1,16 +1,22 @@
 plugins {
     id 'com.android.application'
+    id 'kotlin-android' // Added for Kotlin support
 }
 
 android {
-    compileSdkVersion 34
+    namespace 'com.example.animevideomaker' // Added to fix the namespace error
+    compileSdk 34
 
     defaultConfig {
-        applicationId "com.example.animevideomaker"
-        minSdkVersion 21
-        targetSdkVersion 34
+        applicationId 'com.example.animevideomaker'
+        minSdk 21
+        targetSdk 34
         versionCode 1
         versionName "1.0"
+
+        // Added for better compatibility
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        vectorDrawables.useSupportLibrary true
     }
 
     buildTypes {
@@ -18,12 +24,38 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+        // Added debug build type for clarity
+        debug {
+            applicationIdSuffix '.debug'
+            debuggable true
+        }
+    }
+
+    // Added for better Kotlin and Java compatibility
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    // Enable View Binding (optional, but common for modern Android apps)
+    buildFeatures {
+        viewBinding true
     }
 }
 
 dependencies {
-    implementation 'androidx.core:core-ktx:1.12.0'
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.11.0'
+    // Updated to latest stable versions (as of July 2025)
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+
+    // Added testing dependencies
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
 }
