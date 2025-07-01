@@ -26,16 +26,18 @@ public class MainActivity extends Activity {
         btnCharacterCreator.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // TODO: Launch CharacterCreatorActivity
-                welcomeText.setText("Character Creator clicked!");
+                // 🔗 Launch CharacterCreatorActivity
+                Intent intent = new Intent(MainActivity.this, CharacterCreatorActivity.class);
+                startActivity(intent);
             }
         });
 
         btnSceneComposer.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // TODO: Launch SceneComposerActivity
-                welcomeText.setText("Scene Composer clicked!");
+                // 🔗 Launch SceneComposerActivity
+                Intent intent = new Intent(MainActivity.this, SceneComposerActivity.class);
+                startActivity(intent);
             }
         });
     }
