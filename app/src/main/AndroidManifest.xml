@@ -24,6 +24,7 @@
         android:theme="@style/Theme.AnimeVideoMaker"
         tools:targetApi="34">
 
+        <!-- 👇 MAIN ENTRY -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -34,5 +35,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 👇 Character Creator screen -->
+        <activity android:name=".CharacterCreatorActivity" />
+
+        <!-- 👇 Scene Composer screen -->
+        <activity android:name=".SceneComposerActivity" />
+
     </application>
 </manifest>
