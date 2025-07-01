@@ -1,6 +1,8 @@
 package com.example.animevideomaker;
 
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Handler;
@@ -46,8 +48,8 @@ public class ThermalMonitor {
     }
 
     public void startMonitoring() {
-        if (batteryManager == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-            Log.e(TAG, "BatteryManager not supported or API level < 24. Cannot monitor temperature.");
+        if (batteryManager == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            Log.e(TAG, "BatteryManager not supported or API level < 21. Cannot monitor temperature.");
             return;
         }
         handler.post(thermalCheckTask);
@@ -58,12 +60,24 @@ public class ThermalMonitor {
     }
 
     private float readBatteryTemperature() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && batteryManager != null) {
-            int rawTemp = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_TEMPERATURE);
-            return rawTemp / 10f;
-        } else {
-            Log.w(TAG, "Temperature monitoring not supported on this Android version.");
+        if (batteryManager == null) {
             return -1f;
         }
+        
+        // Use literal value for API 28+ constant (BatteryManager.BATTERY_PROPERTY_TEMPERATURE = 4)
+        final int BATTERY_PROPERTY_TEMPERATURE = 4;
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            int rawTemp = batteryManager.getIntProperty(BATTERY_PROPERTY_TEMPERATURE);
+            return rawTemp / 10f;
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            // Fallback for older APIs (21-27)
+            Intent batteryIntent = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            if (batteryIntent != null) {
+                int temperature = batteryIntent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1);
+                return temperature / 10f;
+            }
+        }
+        return -1f;
     }
-}
+                    }
