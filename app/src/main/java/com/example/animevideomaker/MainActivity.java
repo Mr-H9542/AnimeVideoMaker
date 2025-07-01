@@ -1,44 +1,41 @@
 package com.example.animevideomaker;
 
 import android.app.Activity;
-import android.content.Intent;
 import android.os.Bundle;
-import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.TextView;
+import java.util.List;
 
 public class MainActivity extends Activity {
-
-    TextView welcomeText;
-    Button btnCharacterCreator, btnSceneComposer;
+    private TextView welcomeText;
+    private EditText promptInput;
+    private Button btnRender;
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+    protected void onCreate(Bundle b) {
+        super.onCreate(b);
         setContentView(R.layout.activity_main);
 
         welcomeText = findViewById(R.id.welcomeText);
-        btnCharacterCreator = findViewById(R.id.btnCharacterCreator);
-        btnSceneComposer = findViewById(R.id.btnSceneComposer);
+        promptInput = findViewById(R.id.promptInput);
+        btnRender = findViewById(R.id.btnRender);
 
-        welcomeText.setText("Welcome to Anime Video Maker");
-
-        btnCharacterCreator.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                // 🔗 Launch CharacterCreatorActivity
-                Intent intent = new Intent(MainActivity.this, CharacterCreatorActivity.class);
-                startActivity(intent);
+        btnRender.setOnClickListener(v -> {
+            String prompt = promptInput.getText().toString().trim();
+            if (prompt.isEmpty()) {
+                welcomeText.setText("Please enter a prompt");
+                return;
             }
-        });
 
-        btnSceneComposer.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                // 🔗 Launch SceneComposerActivity
-                Intent intent = new Intent(MainActivity.this, SceneComposerActivity.class);
-                startActivity(intent);
-            }
+            AnimationRequest req = AITextParser.parse(prompt);
+            Scene scene = new Scene();
+            scene.configureFromRequest(req);
+
+            List<VideoFrame> frames = FrameGenerator.generate(this, scene);
+            VideoEncoder.save(frames);
+
+            welcomeText.setText("Rendered: " + req.toString());
         });
     }
 }
