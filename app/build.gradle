@@ -6,11 +6,11 @@ plugins {
 android {
     namespace 'com.example.animevideomaker'
     compileSdk 34
-    buildToolsVersion "34.0.0" // Added to match workflow
+    buildToolsVersion "34.0.0"
 
     defaultConfig {
         applicationId 'com.example.animevideomaker'
-        minSdk 21
+        minSdk 24 // ✅ Increased from 21 to 24 to support BATTERY_PROPERTY_TEMPERATURE
         targetSdk 34
         versionCode 1
         versionName "1.0"
@@ -48,9 +48,11 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
-    // Add video-related dependencies if needed (e.g., ExoPlayer for video editing)
+
+    // Optional: Add this if you plan to add video functionality
     // implementation 'com.google.android.exoplayer:exoplayer:2.19.1'
 }
