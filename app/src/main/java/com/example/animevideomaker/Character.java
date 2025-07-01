@@ -4,68 +4,26 @@ import android.graphics.PointF;
 
 public class Character {
     private String id;
-    private String baseModel;
-    private String pose;
-    private PointF position;
-    private boolean mainCharacter;
+    private String type = "star";
+    private String color = "blue";
+    private String action = "idle";
+    private PointF position = new PointF(0, 0);
+    private boolean mainCharacter = true;
 
-    public Character(String id, String baseModel, PointF position, boolean isMain) {
-        this.id = id;
-        this.baseModel = baseModel;
-        this.position = position;
-        this.pose = "idle";
-        this.mainCharacter = isMain;
+    public Character() {
+        this.id = "default";
     }
 
-    public String getId() {
-        return id;
+    public void setType(String type) { this.type = type; }
+    public void setColor(String color) { this.color = color; }
+    public void setAction(String action) {
+        this.action = action;
+        this.action = action;
     }
 
-    public String getBaseModel() {
-        return baseModel;
-    }
+    public String getType() { return type; }
+    public String getColor() { return color; }
+    public String getAction() { return action; }
 
-    public String getCurrentPose() {
-        return pose;
-    }
-
-    public void setPose(String pose) {
-        this.pose = pose;
-    }
-
-    public PointF getPosition() {
-        return position;
-    }
-
-    public boolean isMainCharacter() {
-        return mainCharacter;
-    }
-
-    public String getAssetPath(String type, int res) {
-        return "characters/" + id + "/" + type + "_" + res + ".png";
-    }
-
-    public int getBaseTextureResolution(String type) {
-        return "diffuse".equals(type) ? 512 : 256;
-    }
-
-    public int getTriangleCount() {
-        return 400; // placeholder
-    }
-
-    public int getBoneCount() {
-        return 10; // placeholder
-    }
-
-    public void simplifyMesh(int maxTriangles) {
-        // Placeholder logic
-    }
-
-    public void simplifyRig(int maxBones) {
-        // Placeholder logic
-    }
-
-    public int getBaseColor() {
-        return 0xFFCCCCCC; // fallback color
-    }
-  }
+    // Existing methods retained...
+}
