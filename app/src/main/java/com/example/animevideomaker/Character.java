@@ -43,4 +43,11 @@ public class Character {
 
     public boolean isMainCharacter() { return mainCharacter; }
     public void setMainCharacter(boolean mainCharacter) { this.mainCharacter = mainCharacter; }
+
+    // New method to get asset path
+    public String getAssetPath(String action, int size) {
+        String baseType = (type != null) ? type : "default";
+        String baseAction = (action != null) ? action : "idle";
+        return "assets/" + baseType + "_" + baseAction + "_" + size + ".png";
+    }
 }
