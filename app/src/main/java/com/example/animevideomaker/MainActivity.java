@@ -13,7 +13,6 @@ import android.widget.EditText;
 import android.widget.TextView;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-import java.util.List;
 
 public class MainActivity extends Activity {
 
@@ -24,8 +23,8 @@ public class MainActivity extends Activity {
     private Button btnRender;
 
     @Override
-    protected void onCreate(Bundle b) {
-        super.onCreate(b);
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         welcomeText = findViewById(R.id.welcomeText);
@@ -35,26 +34,27 @@ public class MainActivity extends Activity {
         welcomeText.setText("Welcome to Anime Video Maker");
 
         btnRender.setOnClickListener(v -> {
+            btnRender.setEnabled(false);  // Disable to avoid double clicks
             if (checkAndRequestPermissions()) {
                 handleRender();
+                btnRender.setEnabled(true);
             }
         });
     }
 
     private boolean checkAndRequestPermissions() {
+        // Android 13+ scoped storage does not require storage permissions
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Android 13+ does not require storage permissions for scoped access
             return true;
         }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this,
-                new String[]{
-                    Manifest.permission.READ_EXTERNAL_STORAGE,
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE
-                },
-                PERMISSION_REQUEST_CODE
-            );
+                    new String[]{
+                            Manifest.permission.READ_EXTERNAL_STORAGE,
+                            Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    },
+                    PERMISSION_REQUEST_CODE);
             return false;
         }
         return true;
@@ -78,6 +78,7 @@ public class MainActivity extends Activity {
             } else {
                 welcomeText.setText("Permission denied. Cannot render without storage access.");
             }
+            btnRender.setEnabled(true);  // Re-enable button after response
         }
     }
 
@@ -91,20 +92,24 @@ public class MainActivity extends Activity {
         AnimationRequest req = AITextParser.parse(prompt);
 
         Character character = new Character();
-        character.setType(req.characterType);
-        character.setColor(req.characterColor);
-        character.setAction(req.action);
+        character.setType(req.characterType != null ? req.characterType : "star");
+        character.setColor(req.characterColor != null ? req.characterColor : "blue");
+        character.setAction(req.action != null ? req.action : "idle");
 
         Bitmap bg = Bitmap.createBitmap(640, 480, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bg);
-        int bgColor = req.background.equals("white") ? 0xFFFFFFFF : 0xFF000000;
+        int bgColor = "white".equalsIgnoreCase(req.background) ? 0xFFFFFFFF : 0xFF000000;
         canvas.drawColor(bgColor);
 
-        Scene scene = new Scene(bg);
-        scene.setDuration(req.duration);
+        Scene scene = new Scene();
+        scene.setBackground(bg);
+        scene.setDuration(req.duration > 0 ? req.duration : 5);
         scene.addCharacter(character);
 
         SceneHolder.scene = scene;
+
         startActivity(new Intent(MainActivity.this, CharacterPreviewActivity.class));
+
+        welcomeText.setText("Rendering started...");
     }
 }
