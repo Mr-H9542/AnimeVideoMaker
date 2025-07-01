@@ -1,22 +1,28 @@
 package com.example.animevideomaker;
 
-import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Paint;
 
 public class CharacterRenderer {
-    private final Context context;
+    public Bitmap renderCharacterFrame(Character character, int width, int height, int frameIndex, int totalFrames) {
+        Bitmap bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bmp);
+        Paint paint = new Paint();
 
-    public CharacterRenderer(Context context) {
-        this.context = context;
-    }
+        int color = switch (character.getColor()) {
+            case "red" -> 0xFFFF4444;
+            case "blue" -> 0xFF4488FF;
+            case "green" -> 0xFF44FF44;
+            default -> 0xFFCCCCCC;
+        };
+        paint.setColor(color);
 
-    public Bitmap renderCharacterFrame(Character character, int width, int height) {
-        // Placeholder render logic
-        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(bitmap);
-        // Draw character placeholder
-        canvas.drawColor(0xFFCCCCCC); // Gray background for now
-        return bitmap;
+        float cx = width / 2f, cy = height / 2f;
+        switch (character.getType()) {
+            case "star", "ball" -> canvas.drawCircle(cx, cy, character.getType().equals("ball") ? 120 : 80, paint);
+        }
+
+        return bmp;
     }
 }
