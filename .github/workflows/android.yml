@@ -89,20 +89,15 @@ jobs:
           path: full_build.log
           if-no-files-found: warn
 
-      - name: Run unit tests (if available)
-        run: |
-          if ./gradlew tasks | grep -q test; then
-            ./gradlew test --warning-mode all --stacktrace --info
-          else
-            echo "No unit tests found, skipping"
-          fi
+      - name: Run app unit tests
+        run: ./gradlew :app:testDebugUnitTest --warning-mode all --stacktrace --info
         continue-on-error: true
 
       - name: List test results directory (safe check)
         if: always()
         run: |
-          mkdir -p app/build/test-results/
-          ls -R app/build/test-results/
+          mkdir -p app/build/test-results/testDebugUnitTest
+          ls -R app/build/test-results/testDebugUnitTest || echo "No test results yet"
 
       - name: Upload test results
         if: always()
