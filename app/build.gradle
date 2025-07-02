@@ -1,6 +1,6 @@
 plugins {
     id 'com.android.application'
-    id 'org.jetbrains.kotlin.android' // Use official Kotlin plugin ID
+    id 'org.jetbrains.kotlin.android' // Kotlin support
 }
 
 android {
@@ -24,10 +24,7 @@ android {
     buildTypes {
         release {
             minifyEnabled false
-            proguardFiles(
-                getDefaultProguardFile('proguard-android-optimize.txt'), 
-                'proguard-rules.pro'
-            )
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
             applicationIdSuffix '.debug'
@@ -42,8 +39,6 @@ android {
 
     kotlinOptions {
         jvmTarget = '17'
-        // Enable explicit API mode for safer Kotlin code (optional)
-        // freeCompilerArgs += ["-Xexplicit-api=strict"]
     }
 
     buildFeatures {
@@ -57,12 +52,16 @@ android {
         }
     }
 
-    // Optional: Configure packaging options if you add native libs or large models
     packagingOptions {
         resources {
-            excludes += ['/META-INF/{AL2.0,LGPL2.1}'] // common exclude to avoid duplicate licenses
+            excludes += ['/META-INF/{AL2.0,LGPL2.1}'] // Avoid duplicate license warnings
         }
     }
+}
+
+repositories {
+    google()
+    mavenCentral() // Ensure ONNX runtime is found here
 }
 
 dependencies {
@@ -71,13 +70,10 @@ dependencies {
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
+    // ONNX Runtime Android for AI model inference
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.17.0'
+
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
-
-    // Optional video playback library (uncomment if needed)
-    // implementation 'com.google.android.exoplayer:exoplayer:2.19.1'
-
-    // Optional: Add ONNX runtime dependency or ML dependencies here if you integrate models
-    // implementation 'ai.onnxruntime:onnxruntime-android:1.15.1'
 }
