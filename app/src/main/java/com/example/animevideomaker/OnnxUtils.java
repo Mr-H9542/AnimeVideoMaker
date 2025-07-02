@@ -81,8 +81,13 @@ public class OnnxUtils {
                     Optional<OnnxValue> optionalOutput = results.get(outputName);
                     if (optionalOutput.isPresent()) {
                         OnnxValue outputValue = optionalOutput.get();
-                        long[] shape = outputValue.getInfo().getShape();
-                        Log.i(TAG, "Output name: " + outputName + ", shape: " + java.util.Arrays.toString(shape));
+                        if (outputValue instanceof OnnxTensor) {
+                            OnnxTensor outputTensor = (OnnxTensor) outputValue;
+                            long[] shape = outputTensor.getInfo().getShape();
+                            Log.i(TAG, "Output name: " + outputName + ", shape: " + java.util.Arrays.toString(shape));
+                        } else {
+                            Log.w(TAG, "Output is not an OnnxTensor: " + outputName);
+                        }
                     } else {
                         Log.w(TAG, "Output missing for name: " + outputName);
                     }
