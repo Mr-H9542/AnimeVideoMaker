@@ -8,12 +8,15 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+
+import ai.onnxruntime.*;
 
 public class MainActivity extends Activity {
 
@@ -26,34 +29,45 @@ public class MainActivity extends Activity {
     private EditText promptInput;
     private Button btnRender;
 
+    // ONNX
+    private OrtEnvironment ortEnv;
+    private OrtSession textEncoderSession;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        welcomeText = findViewById(R.id.welcomeText);
-        promptInput = findViewById(R.id.promptInput);
-        btnRender = findViewById(R.id.btnRender);
-
-        welcomeText.setText("Welcome to Anime Video Maker");
+        initViews();
+        checkPermissions();
+        loadOnnxModels(); // Load ONNX models early
 
         btnRender.setOnClickListener(v -> {
-            btnRender.setEnabled(false); // Prevent multiple clicks
+            btnRender.setEnabled(false);
             if (hasRequiredPermissions()) {
                 processRenderRequest();
-                btnRender.setEnabled(true);
             } else {
                 requestNecessaryPermissions();
             }
         });
     }
 
-    private boolean hasRequiredPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Scoped storage on Android 13+ no longer requires storage permission for this use-case
-            return true;
+    private void initViews() {
+        welcomeText = findViewById(R.id.welcomeText);
+        promptInput = findViewById(R.id.promptInput);
+        btnRender = findViewById(R.id.btnRender);
+        welcomeText.setText("Welcome to Anime Video Maker");
+    }
+
+    private void checkPermissions() {
+        if (!hasRequiredPermissions()) {
+            requestNecessaryPermissions();
         }
-        return ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean hasRequiredPermissions() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
     }
 
     private void requestNecessaryPermissions() {
@@ -70,15 +84,11 @@ public class MainActivity extends Activity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
         if (requestCode == PERMISSION_REQUEST_CODE) {
-            boolean allGranted = true;
-            if (grantResults.length == 0) {
-                allGranted = false;
-            } else {
-                for (int result : grantResults) {
-                    if (result != PackageManager.PERMISSION_GRANTED) {
-                        allGranted = false;
-                        break;
-                    }
+            boolean allGranted = grantResults.length > 0;
+            for (int result : grantResults) {
+                if (result != PackageManager.PERMISSION_GRANTED) {
+                    allGranted = false;
+                    break;
                 }
             }
 
@@ -86,8 +96,19 @@ public class MainActivity extends Activity {
                 processRenderRequest();
             } else {
                 welcomeText.setText("Permission denied. Cannot render without storage access.");
+                btnRender.setEnabled(true);
             }
-            btnRender.setEnabled(true);
+        }
+    }
+
+    private void loadOnnxModels() {
+        try {
+            ortEnv = OrtEnvironment.getEnvironment();
+            textEncoderSession = OnnxUtils.loadModelFromAssets(this, ortEnv, "animagine-xl/text_encoder/model.onnx");
+            Log.d("ONNX", "Text encoder model loaded.");
+        } catch (Exception e) {
+            Log.e("ONNX", "Failed to load ONNX model.", e);
+            welcomeText.setText("Failed to initialize AI models.");
         }
     }
 
@@ -107,7 +128,6 @@ public class MainActivity extends Activity {
             return;
         }
 
-        // Use defaults if null or invalid
         String characterType = req.characterType != null ? req.characterType : "star";
         String characterColor = req.characterColor != null ? req.characterColor : "blue";
         String action = req.action != null ? req.action : "idle";
@@ -127,7 +147,7 @@ public class MainActivity extends Activity {
             case "red" -> 0xFFFF0000;
             case "blue" -> 0xFF0000FF;
             case "gray" -> 0xFF888888;
-            default -> 0xFF000000; // black fallback
+            default -> 0xFF000000;
         };
         canvas.drawColor(bgColor);
 
@@ -140,5 +160,6 @@ public class MainActivity extends Activity {
 
         welcomeText.setText("Rendering started...");
         startActivity(new Intent(MainActivity.this, CharacterPreviewActivity.class));
+        btnRender.setEnabled(true);
     }
 }
