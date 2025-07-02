@@ -15,6 +15,7 @@ import java.io.InputStream;
 import java.nio.FloatBuffer;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Utility class for loading ONNX models and running inference with ONNX Runtime.
@@ -77,8 +78,9 @@ public class OnnxUtils {
             // Run inference
             try (OrtSession.Result results = session.run(inputs)) {
                 for (String outputName : session.getOutputNames()) {
-                    OnnxValue outputValue = results.get(outputName);
-                    if (outputValue != null) {
+                    Optional<OnnxValue> optionalOutput = results.get(outputName);
+                    if (optionalOutput.isPresent()) {
+                        OnnxValue outputValue = optionalOutput.get();
                         long[] shape = outputValue.getInfo().getShape();
                         Log.i(TAG, "Output name: " + outputName + ", shape: " + java.util.Arrays.toString(shape));
                     } else {
