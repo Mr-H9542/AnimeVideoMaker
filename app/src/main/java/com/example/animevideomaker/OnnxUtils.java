@@ -8,6 +8,7 @@ import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtException;
 import ai.onnxruntime.OrtSession;
+import ai.onnxruntime.OnnxValue;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -36,9 +37,10 @@ public class OnnxUtils {
             throws IOException, OrtException {
         AssetManager assetManager = context.getAssets();
         try (InputStream inputStream = assetManager.open(assetPath)) {
-            byte[] modelBytes = new byte[inputStream.available()];
+            int size = inputStream.available();
+            byte[] modelBytes = new byte[size];
             int bytesRead = inputStream.read(modelBytes);
-            if (bytesRead != modelBytes.length) {
+            if (bytesRead != size) {
                 throw new IOException("Failed to read the complete ONNX model file.");
             }
             return env.createSession(modelBytes, new OrtSession.SessionOptions());
@@ -56,7 +58,11 @@ public class OnnxUtils {
     public static void runDummyInference(OrtEnvironment env, OrtSession session) throws OrtException {
         // Example input shape: [1, 3, 224, 224] (modify as needed)
         long[] inputShape = new long[]{1, 3, 224, 224};
-        float[] inputData = new float[(int) (inputShape[0] * inputShape[1] * inputShape[2] * inputShape[3])];
+        int totalSize = 1;
+        for (long dim : inputShape) {
+            totalSize *= dim;
+        }
+        float[] inputData = new float[totalSize];
 
         // Fill dummy data with 1.0f
         for (int i = 0; i < inputData.length; i++) {
@@ -74,11 +80,13 @@ public class OnnxUtils {
 
             // Run the model inference
             try (OrtSession.Result results = session.run(inputs)) {
-                // Log output names and shapes
-                results.forEach((name, value) -> {
+                // Use entrySet() instead of forEach lambda to avoid incompatible lambda error
+                for (Map.Entry<String, OnnxValue> entry : results.entrySet()) {
+                    String name = entry.getKey();
+                    OnnxValue value = entry.getValue();
                     long[] shape = value.getInfo().getShape();
                     Log.i(TAG, "Output name: " + name + ", shape: " + java.util.Arrays.toString(shape));
-                });
+                }
             }
         }
     }
