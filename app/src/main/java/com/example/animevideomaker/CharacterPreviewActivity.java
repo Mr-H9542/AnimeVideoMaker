@@ -17,13 +17,14 @@ import java.util.List;
 
 public class CharacterPreviewActivity extends Activity {
 
-    private ImageView characterView;
+    private static final int FRAME_DELAY_MS = 100; // 10 FPS
     private final Handler handler = new Handler();
+
+    private ImageView characterView;
     private List<VideoFrame> frames;
     private int currentFrame = 0;
-    private static final int FRAME_DELAY_MS = 100; // 10 FPS
 
-    private final Runnable frameRunnable = new Runnable() {
+    private final Runnable frameUpdater = new Runnable() {
         @Override
         public void run() {
             if (frames == null || frames.isEmpty()) return;
@@ -41,12 +42,11 @@ public class CharacterPreviewActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        LinearLayout rootLayout = setupLayout();
+        LinearLayout rootLayout = createLayout();
 
         Scene scene = SceneHolder.scene;
         if (scene == null) {
-            Toast.makeText(this, "No scene provided!", Toast.LENGTH_SHORT).show();
+            showToast("No scene provided!");
             finish();
             return;
         }
@@ -54,47 +54,26 @@ public class CharacterPreviewActivity extends Activity {
         try {
             frames = FrameGenerator.generate(this, scene);
         } catch (Exception e) {
-            Toast.makeText(this, "Failed to generate frames: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            showToast("Failed to generate frames: " + e.getMessage());
             finish();
             return;
         }
 
         if (frames == null || frames.isEmpty()) {
-            Toast.makeText(this, "No frames to display!", Toast.LENGTH_SHORT).show();
+            showToast("No frames to display!");
             finish();
             return;
         }
 
-        handler.post(frameRunnable);
-
-        // Save button
-        Button saveButton = new Button(this);
-        saveButton.setText("Save as Video");
-        saveButton.setOnClickListener(v -> {
-            Toast.makeText(this, "Saving video...", Toast.LENGTH_SHORT).show();
-            new Thread(() -> {
-                File savedFile = VideoEncoder.save(frames);
-                if (savedFile != null) {
-                    // Refresh gallery
-                    MediaScannerConnection.scanFile(this,
-                            new String[]{savedFile.getAbsolutePath()},
-                            new String[]{"video/mp4"}, null);
-
-                    runOnUiThread(() -> Toast.makeText(this, "Video saved:\n" + savedFile.getName(), Toast.LENGTH_LONG).show());
-                } else {
-                    runOnUiThread(() -> Toast.makeText(this, "Failed to save video", Toast.LENGTH_SHORT).show());
-                }
-            }).start();
-        });
-
-        rootLayout.addView(saveButton);
+        handler.post(frameUpdater);
+        addSaveButton(rootLayout);
     }
 
-    private LinearLayout setupLayout() {
-        LinearLayout rootLayout = new LinearLayout(this);
-        rootLayout.setOrientation(LinearLayout.VERTICAL);
-        rootLayout.setBackgroundColor(0xFF000000); // black background
-        rootLayout.setGravity(Gravity.CENTER);
+    private LinearLayout createLayout() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setBackgroundColor(0xFF000000);
+        layout.setGravity(Gravity.CENTER);
 
         characterView = new ImageView(this);
         characterView.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -104,15 +83,42 @@ public class CharacterPreviewActivity extends Activity {
                 1f
         ));
 
-        rootLayout.addView(characterView);
-        setContentView(rootLayout);
-        return rootLayout;
+        layout.addView(characterView);
+        setContentView(layout);
+        return layout;
+    }
+
+    private void addSaveButton(LinearLayout parentLayout) {
+        Button saveButton = new Button(this);
+        saveButton.setText("Save as Video");
+
+        saveButton.setOnClickListener(v -> {
+            showToast("Saving video...");
+            new Thread(() -> {
+                File outputFile = VideoEncoder.save(frames);
+                if (outputFile != null) {
+                    MediaScannerConnection.scanFile(this,
+                            new String[]{outputFile.getAbsolutePath()},
+                            new String[]{"video/mp4"}, null);
+
+                    runOnUiThread(() -> showToast("Video saved:\n" + outputFile.getName()));
+                } else {
+                    runOnUiThread(() -> showToast("Failed to save video"));
+                }
+            }).start();
+        });
+
+        parentLayout.addView(saveButton);
+    }
+
+    private void showToast(String message) {
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        handler.removeCallbacks(frameRunnable);
+        handler.removeCallbacks(frameUpdater);
         recycleFrames();
     }
 
@@ -124,4 +130,4 @@ public class CharacterPreviewActivity extends Activity {
             frames.clear();
         }
     }
-                                  }
+}
