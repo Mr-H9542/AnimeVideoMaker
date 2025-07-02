@@ -1,6 +1,6 @@
 plugins {
     id 'com.android.application'
-    id 'kotlin-android'
+    id 'org.jetbrains.kotlin.android' // Use official Kotlin plugin ID
 }
 
 android {
@@ -10,18 +10,24 @@ android {
 
     defaultConfig {
         applicationId 'com.example.animevideomaker'
-        minSdk 24 // ✅ Increased from 21 to 24 to support BATTERY_PROPERTY_TEMPERATURE
+        minSdk 24
         targetSdk 34
         versionCode 1
         versionName "1.0"
+
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
-        vectorDrawables.useSupportLibrary true
+        vectorDrawables {
+            useSupportLibrary true
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            proguardFiles(
+                getDefaultProguardFile('proguard-android-optimize.txt'), 
+                'proguard-rules.pro'
+            )
         }
         debug {
             applicationIdSuffix '.debug'
@@ -36,17 +42,25 @@ android {
 
     kotlinOptions {
         jvmTarget = '17'
+        // Enable explicit API mode for safer Kotlin code (optional)
+        // freeCompilerArgs += ["-Xexplicit-api=strict"]
     }
 
     buildFeatures {
         viewBinding true
     }
 
-    // ← Add this block here
     testOptions {
         unitTests {
             includeAndroidResources = true
             returnDefaultValues = true
+        }
+    }
+
+    // Optional: Configure packaging options if you add native libs or large models
+    packagingOptions {
+        resources {
+            excludes += ['/META-INF/{AL2.0,LGPL2.1}'] // common exclude to avoid duplicate licenses
         }
     }
 }
@@ -61,6 +75,9 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
 
-    // Optional: Add this if you plan to add video functionality
+    // Optional video playback library (uncomment if needed)
     // implementation 'com.google.android.exoplayer:exoplayer:2.19.1'
+
+    // Optional: Add ONNX runtime dependency or ML dependencies here if you integrate models
+    // implementation 'ai.onnxruntime:onnxruntime-android:1.15.1'
 }
