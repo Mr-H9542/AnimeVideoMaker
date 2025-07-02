@@ -8,7 +8,6 @@ import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtException;
 import ai.onnxruntime.OrtSession;
-import ai.onnxruntime.OnnxValue;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -28,7 +27,7 @@ public class OnnxUtils {
      *
      * @param context   Android Context to access assets.
      * @param env       OrtEnvironment instance.
-     * @param assetPath Path to ONNX model inside assets folder (e.g., "animagine-xl/text_encoder.onnx").
+     * @param assetPath Path to ONNX model inside assets folder (e.g., "animagine-xl/text_encoder/model.onnx").
      * @return Initialized OrtSession ready for inference.
      * @throws IOException    If the model file cannot be read.
      * @throws OrtException   If ONNX Runtime fails to create a session.
@@ -37,10 +36,9 @@ public class OnnxUtils {
             throws IOException, OrtException {
         AssetManager assetManager = context.getAssets();
         try (InputStream inputStream = assetManager.open(assetPath)) {
-            int size = inputStream.available();
-            byte[] modelBytes = new byte[size];
+            byte[] modelBytes = new byte[inputStream.available()];
             int bytesRead = inputStream.read(modelBytes);
-            if (bytesRead != size) {
+            if (bytesRead != modelBytes.length) {
                 throw new IOException("Failed to read the complete ONNX model file.");
             }
             return env.createSession(modelBytes, new OrtSession.SessionOptions());
@@ -58,11 +56,7 @@ public class OnnxUtils {
     public static void runDummyInference(OrtEnvironment env, OrtSession session) throws OrtException {
         // Example input shape: [1, 3, 224, 224] (modify as needed)
         long[] inputShape = new long[]{1, 3, 224, 224};
-        int totalSize = 1;
-        for (long dim : inputShape) {
-            totalSize *= dim;
-        }
-        float[] inputData = new float[totalSize];
+        float[] inputData = new float[(int) (inputShape[0] * inputShape[1] * inputShape[2] * inputShape[3])];
 
         // Fill dummy data with 1.0f
         for (int i = 0; i < inputData.length; i++) {
@@ -80,10 +74,9 @@ public class OnnxUtils {
 
             // Run the model inference
             try (OrtSession.Result results = session.run(inputs)) {
-                // Use entrySet() instead of forEach lambda to avoid incompatible lambda error
-                for (Map.Entry<String, OnnxValue> entry : results.entrySet()) {
-                    String name = entry.getKey();
-                    OnnxValue value = entry.getValue();
+                // Log output names and shapes using a for-loop
+                for (String name : session.getOutputNames()) {
+                    ai.onnxruntime.OnnxValue value = results.get(name);
                     long[] shape = value.getInfo().getShape();
                     Log.i(TAG, "Output name: " + name + ", shape: " + java.util.Arrays.toString(shape));
                 }
