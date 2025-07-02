@@ -19,15 +19,29 @@ import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+
 import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtSession;
 
 public class MainActivity extends Activity {
 
+    private static final String TAG = "MainActivity";
+
     private static final int PERMISSION_REQUEST_CODE = 1001;
     private static final int DEFAULT_DURATION_SECONDS = 5;
     private static final int BACKGROUND_WIDTH = 640;
     private static final int BACKGROUND_HEIGHT = 480;
+
+    private static final String MODEL_URL = "https://drive.google.com/uc?export=download&id=1YI72jDRoZraSZjWlgKuMxNY8mFZrZm9P";
+    private static final String ZIP_NAME = "models.zip";
+    private static final String MODEL_DIR = "ai_model";
 
     private TextView welcomeText;
     private EditText promptInput;
@@ -43,7 +57,14 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
 
         initViews();
-        checkPermissionsAndLoadModels();
+
+        // Start download in background, then load models & enable UI
+        new Thread(() -> {
+            ensureModelsDownloaded();
+            runOnUiThread(() -> {
+                checkPermissionsAndLoadModels();
+            });
+        }).start();
 
         btnRender.setOnClickListener(v -> {
             btnRender.setEnabled(false);
@@ -65,6 +86,7 @@ public class MainActivity extends Activity {
         progressBar = findViewById(R.id.progressBar);
         progressBar.setVisibility(View.GONE);
         welcomeText.setText("Welcome to Anime Video Maker");
+        btnRender.setEnabled(false);  // Disabled until models are ready
     }
 
     private void checkPermissionsAndLoadModels() {
@@ -77,7 +99,7 @@ public class MainActivity extends Activity {
 
     private boolean hasRequiredPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Android 13+ uses different permissions, assume granted or manage accordingly
+            // For simplicity, assume permissions granted for Android 13+
             return true;
         }
         return ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
@@ -123,13 +145,23 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             try {
                 ortEnv = OrtEnvironment.getEnvironment();
-                textEncoderSession = OnnxUtils.loadModelFromAssets(this, ortEnv, "animagine-xl/text_encoder/model.onnx");
+
+                // Load ONNX models from internal storage (ai_model folder)
+                File modelDir = new File(getFilesDir(), MODEL_DIR);
+                File textEncoderFile = new File(modelDir, "animagine-xl/text_encoder/model.onnx");
+
+                if (!textEncoderFile.exists()) {
+                    throw new RuntimeException("Model file not found: " + textEncoderFile.getAbsolutePath());
+                }
+
+                textEncoderSession = OnnxUtils.loadModelFromFile(ortEnv, textEncoderFile.getAbsolutePath());
+
                 runOnUiThread(() -> {
                     welcomeText.setText("AI models loaded successfully.");
                     btnRender.setEnabled(true);
                 });
             } catch (Exception e) {
-                Log.e("ONNX", "Failed to load ONNX model.", e);
+                Log.e(TAG, "Failed to load ONNX model.", e);
                 runOnUiThread(() -> {
                     welcomeText.setText("Failed to initialize AI models.");
                     btnRender.setEnabled(false);
@@ -202,4 +234,79 @@ public class MainActivity extends Activity {
             });
         }).start();
     }
-}
+
+    // --- Model download & unzip methods ---
+
+    private void ensureModelsDownloaded() {
+        File modelDir = new File(getFilesDir(), MODEL_DIR);
+        if (modelDir.exists() && modelDir.isDirectory() && modelDir.listFiles().length > 0) {
+            Log.d(TAG, "Model files already present.");
+            return;
+        }
+
+        try {
+            Log.d(TAG, "Downloading model zip...");
+            File zipFile = new File(getFilesDir(), ZIP_NAME);
+            downloadFile(MODEL_URL, zipFile);
+
+            Log.d(TAG, "Extracting...");
+            unzip(zipFile.getAbsolutePath(), modelDir.getAbsolutePath());
+
+            zipFile.delete();
+            Log.d(TAG, "Models downloaded and extracted.");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to download or extract models", e);
+            runOnUiThread(() -> {
+                welcomeText.setText("Error downloading models: " + e.getMessage());
+            });
+        }
+    }
+
+    private void downloadFile(String fileURL, File destination) throws Exception {
+        URL url = new URL(fileURL);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.connect();
+
+        if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
+            throw new RuntimeException("Server returned HTTP " + conn.getResponseCode()
+                    + " " + conn.getResponseMessage());
+        }
+
+        InputStream input = conn.getInputStream();
+        FileOutputStream output = new FileOutputStream(destination);
+
+        byte[] buffer = new byte[4096];
+        int bytesRead;
+        while ((bytesRead = input.read(buffer)) != -1) {
+            output.write(buffer, 0, bytesRead);
+        }
+
+        output.close();
+        input.close();
+    }
+
+    private void unzip(String zipFilePath, String destDirectory) throws Exception {
+        File destDir = new File(destDirectory);
+        if (!destDir.exists()) destDir.mkdirs();
+
+        ZipInputStream zipIn = new ZipInputStream(new java.io.FileInputStream(zipFilePath));
+        ZipEntry entry;
+        while ((entry = zipIn.getNextEntry()) != null) {
+            File outFile = new File(destDir, entry.getName());
+            if (entry.isDirectory()) {
+                outFile.mkdirs();
+            } else {
+                outFile.getParentFile().mkdirs();
+                FileOutputStream fos = new FileOutputStream(outFile);
+                byte[] buffer = new byte[4096];
+                int len;
+                while ((len = zipIn.read(buffer)) != -1) {
+                    fos.write(buffer, 0, len);
+                }
+                fos.close();
+            }
+            zipIn.closeEntry();
+        }
+        zipIn.close();
+    }
+                   }
