@@ -2,13 +2,17 @@ package com.example.animevideomaker;
 
 import android.app.Activity;
 import android.graphics.Bitmap;
+import android.media.MediaScannerConnection;
 import android.os.Bundle;
 import android.os.Handler;
 import android.view.Gravity;
+import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.Toast;
 
+import java.io.File;
 import java.util.List;
 
 public class CharacterPreviewActivity extends Activity {
@@ -38,7 +42,7 @@ public class CharacterPreviewActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        setupLayout();
+        LinearLayout rootLayout = setupLayout();
 
         Scene scene = SceneHolder.scene;
         if (scene == null) {
@@ -62,22 +66,47 @@ public class CharacterPreviewActivity extends Activity {
         }
 
         handler.post(frameRunnable);
+
+        // Save button
+        Button saveButton = new Button(this);
+        saveButton.setText("Save as Video");
+        saveButton.setOnClickListener(v -> {
+            Toast.makeText(this, "Saving video...", Toast.LENGTH_SHORT).show();
+            new Thread(() -> {
+                File savedFile = VideoEncoder.save(frames);
+                if (savedFile != null) {
+                    // Refresh gallery
+                    MediaScannerConnection.scanFile(this,
+                            new String[]{savedFile.getAbsolutePath()},
+                            new String[]{"video/mp4"}, null);
+
+                    runOnUiThread(() -> Toast.makeText(this, "Video saved:\n" + savedFile.getName(), Toast.LENGTH_LONG).show());
+                } else {
+                    runOnUiThread(() -> Toast.makeText(this, "Failed to save video", Toast.LENGTH_SHORT).show());
+                }
+            }).start();
+        });
+
+        rootLayout.addView(saveButton);
     }
 
-    private void setupLayout() {
+    private LinearLayout setupLayout() {
         LinearLayout rootLayout = new LinearLayout(this);
+        rootLayout.setOrientation(LinearLayout.VERTICAL);
         rootLayout.setBackgroundColor(0xFF000000); // black background
         rootLayout.setGravity(Gravity.CENTER);
 
         characterView = new ImageView(this);
         characterView.setScaleType(ImageView.ScaleType.FIT_CENTER);
         characterView.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
         ));
 
         rootLayout.addView(characterView);
         setContentView(rootLayout);
+        return rootLayout;
     }
 
     @Override
@@ -95,4 +124,4 @@ public class CharacterPreviewActivity extends Activity {
             frames.clear();
         }
     }
-}
+                                  }
