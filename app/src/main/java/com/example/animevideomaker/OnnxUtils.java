@@ -74,11 +74,16 @@ public class OnnxUtils {
 
             // Run the model inference
             try (OrtSession.Result results = session.run(inputs)) {
-                // Log output names and shapes using a for-loop
+                // Log output names and shapes safely
                 for (String name : session.getOutputNames()) {
-                    ai.onnxruntime.OnnxValue value = results.get(name);
-                    long[] shape = value.getInfo().getShape();
-                    Log.i(TAG, "Output name: " + name + ", shape: " + java.util.Arrays.toString(shape));
+                    java.util.Optional<ai.onnxruntime.OnnxValue> optionalValue = results.get(name);
+                    if (optionalValue.isPresent()) {
+                        ai.onnxruntime.OnnxValue value = optionalValue.get();
+                        long[] shape = value.getInfo().getShape();
+                        Log.i(TAG, "Output name: " + name + ", shape: " + java.util.Arrays.toString(shape));
+                    } else {
+                        Log.w(TAG, "Output missing for name: " + name);
+                    }
                 }
             }
         }
