@@ -8,6 +8,7 @@ import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtException;
 import ai.onnxruntime.OrtSession;
+import ai.onnxruntime.OnnxValue;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -16,29 +17,30 @@ import java.util.Collections;
 import java.util.Map;
 
 /**
- * Utility class for loading ONNX models and running inference using ONNX Runtime.
+ * Utility class for loading ONNX models and running inference with ONNX Runtime.
  */
 public class OnnxUtils {
 
     private static final String TAG = "OnnxUtils";
 
     /**
-     * Loads an ONNX model from the app assets into an OrtSession.
+     * Loads an ONNX model from app assets into an OrtSession.
      *
      * @param context   Android Context to access assets.
      * @param env       OrtEnvironment instance.
-     * @param assetPath Path to ONNX model inside assets folder (e.g., "animagine-xl/text_encoder/model.onnx").
-     * @return Initialized OrtSession ready for inference.
-     * @throws IOException    If the model file cannot be read.
-     * @throws OrtException   If ONNX Runtime fails to create a session.
+     * @param assetPath Path to ONNX model inside assets (e.g. "animagine-xl/text_encoder/model.onnx").
+     * @return OrtSession ready for inference.
+     * @throws IOException  if reading the model fails.
+     * @throws OrtException if creating session fails.
      */
     public static OrtSession loadModelFromAssets(Context context, OrtEnvironment env, String assetPath)
             throws IOException, OrtException {
         AssetManager assetManager = context.getAssets();
         try (InputStream inputStream = assetManager.open(assetPath)) {
-            byte[] modelBytes = new byte[inputStream.available()];
+            int available = inputStream.available();
+            byte[] modelBytes = new byte[available];
             int bytesRead = inputStream.read(modelBytes);
-            if (bytesRead != modelBytes.length) {
+            if (bytesRead != available) {
                 throw new IOException("Failed to read the complete ONNX model file.");
             }
             return env.createSession(modelBytes, new OrtSession.SessionOptions());
@@ -47,42 +49,40 @@ public class OnnxUtils {
 
     /**
      * Runs a dummy inference on the given ONNX Runtime session.
-     * Adjust the input tensor shape and data to match your model's requirements.
+     * This is useful for testing model integration.
      *
      * @param env     OrtEnvironment instance.
      * @param session OrtSession loaded with your model.
-     * @throws OrtException If inference fails.
+     * @throws OrtException if inference fails.
      */
     public static void runDummyInference(OrtEnvironment env, OrtSession session) throws OrtException {
-        // Example input shape: [1, 3, 224, 224] (modify as needed)
+        // Example input shape: [1, 3, 224, 224] - adjust as per your model's input
         long[] inputShape = new long[]{1, 3, 224, 224};
-        float[] inputData = new float[(int) (inputShape[0] * inputShape[1] * inputShape[2] * inputShape[3])];
+        int inputSize = 1;
+        for (long dim : inputShape) inputSize *= dim;
 
-        // Fill dummy data with 1.0f
-        for (int i = 0; i < inputData.length; i++) {
+        float[] inputData = new float[inputSize];
+        // Fill with dummy data (e.g., 1.0f)
+        for (int i = 0; i < inputSize; i++) {
             inputData[i] = 1.0f;
         }
 
-        // Create input tensor from float buffer
         try (OnnxTensor inputTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(inputData), inputShape)) {
-
-            // Get the first input name from the model
+            // Get the first input name (some models have multiple inputs; adjust if needed)
             String inputName = session.getInputNames().iterator().next();
 
-            // Prepare input map for inference
+            // Prepare inputs map
             Map<String, OnnxTensor> inputs = Collections.singletonMap(inputName, inputTensor);
 
-            // Run the model inference
+            // Run inference
             try (OrtSession.Result results = session.run(inputs)) {
-                // Log output names and shapes safely
-                for (String name : session.getOutputNames()) {
-                    java.util.Optional<ai.onnxruntime.OnnxValue> optionalValue = results.get(name);
-                    if (optionalValue.isPresent()) {
-                        ai.onnxruntime.OnnxValue value = optionalValue.get();
-                        long[] shape = value.getInfo().getShape();
-                        Log.i(TAG, "Output name: " + name + ", shape: " + java.util.Arrays.toString(shape));
+                for (String outputName : session.getOutputNames()) {
+                    OnnxValue outputValue = results.get(outputName);
+                    if (outputValue != null) {
+                        long[] shape = outputValue.getInfo().getShape();
+                        Log.i(TAG, "Output name: " + outputName + ", shape: " + java.util.Arrays.toString(shape));
                     } else {
-                        Log.w(TAG, "Output missing for name: " + name);
+                        Log.w(TAG, "Output missing for name: " + outputName);
                     }
                 }
             }
