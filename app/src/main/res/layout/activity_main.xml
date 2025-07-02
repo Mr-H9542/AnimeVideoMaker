@@ -25,10 +25,12 @@
         android:padding="10dp"
         android:textColor="#FFFFFF"
         android:textColorHint="#999999"
-        android:inputType="textMultiLine"
+        android:inputType="textMultiLine|textNoSuggestions"
         android:minLines="3"
         android:maxLines="5"
-        android:gravity="top|start" />
+        android:gravity="top|start"
+        android:scrollbars="vertical"
+        android:overScrollMode="always" />
 
     <Button
         android:id="@+id/btnRender"
