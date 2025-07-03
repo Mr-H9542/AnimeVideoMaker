@@ -63,7 +63,7 @@ public class MainActivity extends Activity {
         initViews();
         setupLoadingDialog();
         setupPromptValidation();
-        initPermissions();
+        checkAndRequestPermissions();
         btnRender.setOnClickListener(v -> onRenderClicked());
     }
 
@@ -112,88 +112,64 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void initPermissions() {
-        executor.execute(() -> {
-            try {
-                loadModelsIfNeeded();
+    private void checkAndRequestPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // No need for storage permissions on Android 10+
+            startModelDownload();
+        } else {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE},
+                        PERMISSION_REQUEST_CODE);
+            } else {
+                startModelDownload();
+            }
+        }
+    }
+
+    private void startModelDownload() {
+        showLoadingDialog("Downloading AI model...");
+        ModelDownloader.downloadModelIfNeeded(this, new ModelDownloader.DownloadListener() {
+            @Override
+            public void onDownloadSuccess(File modelFile) {
+                Log.i(TAG, "Model download success: " + modelFile.getAbsolutePath());
                 mainHandler.post(() -> {
-                    if (hasRequiredPermissions()) {
-                        loadOnnxModelsAsync();
-                    } else {
-                        requestPermissions();
-                    }
+                    showLoadingDialog("Loading AI model...");
+                    loadOnnxModelAsync(modelFile);
                 });
-            } catch (Exception e) {
-                Log.e(TAG, "Initialization failed", e);
-                mainHandler.post(() -> showError("Initialization failed: " + e.getMessage()));
+            }
+
+            @Override
+            public void onDownloadFailed(String error) {
+                Log.e(TAG, "Model download failed: " + error);
+                mainHandler.post(() -> {
+                    hideLoadingDialog();
+                    showError("Failed to download AI model: " + error);
+                });
             }
         });
     }
 
-    private boolean hasRequiredPermissions() {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
-                ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
-    }
-
-    private void requestPermissions() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
-                new AlertDialog.Builder(this)
-                        .setTitle("Storage Permission Needed")
-                        .setMessage("We need storage access to load AI models and save animations.")
-                        .setPositiveButton("Grant", (dialog, which) -> requestStoragePermissions())
-                        .setNegativeButton("Deny", (dialog, which) -> showError("Permission denied. Cannot proceed."))
-                        .show();
-            } else {
-                requestStoragePermissions();
-            }
-        } else {
-            loadOnnxModelsAsync();
-        }
-    }
-
-    private void requestStoragePermissions() {
-        ActivityCompat.requestPermissions(this,
-                new String[]{Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE},
-                PERMISSION_REQUEST_CODE);
-    }
-
-    private void loadModelsIfNeeded() throws Exception {
-        File modelDir = new File(getFilesDir(), Constants.MODEL_DIR);
-        if (modelDir.exists() && modelDir.isDirectory() && modelDir.listFiles().length > 0) {
-            Log.d(TAG, "Models already present.");
-            return;
-        }
-
-        mainHandler.post(() -> showLoadingDialog("Downloading AI models..."));
-        File zipFile = new File(getFilesDir(), Constants.ZIP_NAME);
-        ModelDownloader.downloadFromGoogleDrive(Constants.DRIVE_FILE_ID, zipFile);
-        mainHandler.post(() -> showLoadingDialog("Extracting models..."));
-        ModelDownloader.unzip(zipFile.getAbsolutePath(), modelDir.getAbsolutePath());
-        zipFile.delete();
-    }
-
-    private void loadOnnxModelsAsync() {
+    private void loadOnnxModelAsync(File modelFile) {
         executor.execute(() -> {
             try {
                 ortEnv = OrtEnvironment.getEnvironment();
-                File textEncoderFile = new File(getFilesDir(), Constants.MODEL_DIR + "/animagine-xl/text_encoder/model.onnx");
-
-                if (!textEncoderFile.exists()) {
-                    throw new RuntimeException("ONNX model not found: " + textEncoderFile.getAbsolutePath());
+                if (!modelFile.exists()) {
+                    throw new RuntimeException("Model file missing: " + modelFile.getAbsolutePath());
                 }
-
-                textEncoderSession = OnnxUtils.loadModelFromFile(ortEnv, textEncoderFile.getAbsolutePath());
-
+                textEncoderSession = OnnxUtils.loadModelFromFile(ortEnv, modelFile.getAbsolutePath());
                 mainHandler.post(() -> {
-                    welcomeText.setText("AI models loaded successfully.");
+                    welcomeText.setText("AI model loaded successfully.");
                     btnRender.setEnabled(promptInput.getError() == null && !promptInput.getText().toString().trim().isEmpty());
                     hideLoadingDialog();
                 });
-
             } catch (Exception e) {
-                Log.e(TAG, "Model load failed", e);
-                mainHandler.post(() -> showError("AI model loading failed: " + e.getMessage()));
+                Log.e(TAG, "Failed loading ONNX model", e);
+                mainHandler.post(() -> {
+                    hideLoadingDialog();
+                    showError("AI model loading failed: " + e.getMessage());
+                });
             }
         });
     }
@@ -202,8 +178,11 @@ public class MainActivity extends Activity {
         btnRender.setEnabled(false);
         showLoadingDialog("Processing your prompt...");
 
-        if (!hasRequiredPermissions()) {
-            requestPermissions();
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        != PackageManager.PERMISSION_GRANTED) {
+            // Ask for permission again if missing
+            checkAndRequestPermissions();
             return;
         }
 
@@ -220,9 +199,9 @@ public class MainActivity extends Activity {
                 return;
             }
 
-            if (!VALID_COLORS.contains(req.characterColor) ||
-                !VALID_TYPES.contains(req.characterType) ||
-                !VALID_ACTIONS.contains(req.action) ||
+            if (!VALID_COLORS.contains(req.characterColor.toLowerCase()) ||
+                !VALID_TYPES.contains(req.characterType.toLowerCase()) ||
+                !VALID_ACTIONS.contains(req.action.toLowerCase()) ||
                 !VALID_BACKGROUNDS.contains(req.background.toLowerCase())) {
                 mainHandler.post(() -> showError("Unsupported values in prompt. Please follow the examples."));
                 return;
@@ -255,9 +234,13 @@ public class MainActivity extends Activity {
     }
 
     private void showLoadingDialog(String message) {
-        if (loadingDialog != null) {
-            loadingDialog.setMessage(message);
+        if (loadingDialog != null && !loadingDialog.isShowing()) {
             loadingDialog.show();
+        }
+        // The dialog uses a custom layout, so update text via this method:
+        View view = loadingDialog.findViewById(R.id.loadingMessage);
+        if (view instanceof TextView) {
+            ((TextView) view).setText(message);
         }
     }
 
@@ -291,12 +274,18 @@ public class MainActivity extends Activity {
     public void onRequestPermissionsResult(int code, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(code, permissions, grantResults);
         if (code == PERMISSION_REQUEST_CODE) {
-            boolean granted = Arrays.stream(grantResults).allMatch(r -> r == PackageManager.PERMISSION_GRANTED);
+            boolean granted = true;
+            for (int r : grantResults) {
+                if (r != PackageManager.PERMISSION_GRANTED) {
+                    granted = false;
+                    break;
+                }
+            }
             if (granted) {
-                loadOnnxModelsAsync();
+                startModelDownload();
             } else {
                 showError("Storage permission denied. Cannot continue.");
             }
         }
     }
-    }
+            }
