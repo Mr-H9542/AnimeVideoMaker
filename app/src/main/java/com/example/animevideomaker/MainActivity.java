@@ -13,11 +13,7 @@ import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.Log;
 import android.view.View;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.ProgressBar;
-import android.widget.TextView;
-import android.widget.Toast;
+import android.widget.*;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
@@ -63,7 +59,7 @@ public class MainActivity extends Activity {
         initViews();
         setupLoadingDialog();
         setupPromptValidation();
-        checkAndRequestPermissions();
+        checkPermissionsAndStart();
         btnRender.setOnClickListener(v -> onRenderClicked());
     }
 
@@ -107,18 +103,17 @@ public class MainActivity extends Activity {
             promptInput.setError(null);
             btnRender.setEnabled(textEncoderSession != null);
         } else {
-            promptInput.setError("Invalid prompt. Try: 'color type action on background for duration seconds'");
+            promptInput.setError("Try: 'red star bounce on blue background for 5 seconds'");
             btnRender.setEnabled(false);
         }
     }
 
-    private void checkAndRequestPermissions() {
+    private void checkPermissionsAndStart() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // No need for storage permissions on Android 10+
+            // Scoped storage; no permissions needed
             startModelDownload();
         } else {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                    != PackageManager.PERMISSION_GRANTED) {
+            if (!hasStoragePermissions()) {
                 ActivityCompat.requestPermissions(this,
                         new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE},
                         PERMISSION_REQUEST_CODE);
@@ -128,12 +123,20 @@ public class MainActivity extends Activity {
         }
     }
 
+    private boolean hasStoragePermissions() {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                == PackageManager.PERMISSION_GRANTED &&
+               ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
     private void startModelDownload() {
         showLoadingDialog("Downloading AI model...");
+
         ModelDownloader.downloadModelIfNeeded(this, new ModelDownloader.DownloadListener() {
             @Override
             public void onDownloadSuccess(File modelFile) {
-                Log.i(TAG, "Model download success: " + modelFile.getAbsolutePath());
+                Log.i(TAG, "Model downloaded at: " + modelFile.getAbsolutePath());
                 mainHandler.post(() -> {
                     showLoadingDialog("Loading AI model...");
                     loadOnnxModelAsync(modelFile);
@@ -145,7 +148,7 @@ public class MainActivity extends Activity {
                 Log.e(TAG, "Model download failed: " + error);
                 mainHandler.post(() -> {
                     hideLoadingDialog();
-                    showError("Failed to download AI model: " + error);
+                    showError("Download failed: " + error);
                 });
             }
         });
@@ -155,20 +158,18 @@ public class MainActivity extends Activity {
         executor.execute(() -> {
             try {
                 ortEnv = OrtEnvironment.getEnvironment();
-                if (!modelFile.exists()) {
-                    throw new RuntimeException("Model file missing: " + modelFile.getAbsolutePath());
-                }
                 textEncoderSession = OnnxUtils.loadModelFromFile(ortEnv, modelFile.getAbsolutePath());
+
                 mainHandler.post(() -> {
-                    welcomeText.setText("AI model loaded successfully.");
-                    btnRender.setEnabled(promptInput.getError() == null && !promptInput.getText().toString().trim().isEmpty());
+                    welcomeText.setText("Model loaded!");
+                    btnRender.setEnabled(promptInput.getError() == null);
                     hideLoadingDialog();
                 });
             } catch (Exception e) {
-                Log.e(TAG, "Failed loading ONNX model", e);
+                Log.e(TAG, "ONNX load error", e);
                 mainHandler.post(() -> {
                     hideLoadingDialog();
-                    showError("AI model loading failed: " + e.getMessage());
+                    showError("Model load failed: " + e.getMessage());
                 });
             }
         });
@@ -176,13 +177,10 @@ public class MainActivity extends Activity {
 
     private void onRenderClicked() {
         btnRender.setEnabled(false);
-        showLoadingDialog("Processing your prompt...");
+        showLoadingDialog("Processing prompt...");
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
-                ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                        != PackageManager.PERMISSION_GRANTED) {
-            // Ask for permission again if missing
-            checkAndRequestPermissions();
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q && !hasStoragePermissions()) {
+            checkPermissionsAndStart();
             return;
         }
 
@@ -203,7 +201,7 @@ public class MainActivity extends Activity {
                 !VALID_TYPES.contains(req.characterType.toLowerCase()) ||
                 !VALID_ACTIONS.contains(req.action.toLowerCase()) ||
                 !VALID_BACKGROUNDS.contains(req.background.toLowerCase())) {
-                mainHandler.post(() -> showError("Unsupported values in prompt. Please follow the examples."));
+                mainHandler.post(() -> showError("Unsupported values. Use valid color/type/action."));
                 return;
             }
 
@@ -216,18 +214,17 @@ public class MainActivity extends Activity {
                     oos.writeObject(scene);
                 }
 
-                Intent previewIntent = new Intent(MainActivity.this, CharacterPreviewActivity.class);
-                previewIntent.putExtra("scene_file_path", sceneFile.getAbsolutePath());
+                Intent intent = new Intent(MainActivity.this, CharacterPreviewActivity.class);
+                intent.putExtra("scene_file_path", sceneFile.getAbsolutePath());
 
                 mainHandler.post(() -> {
-                    welcomeText.setText("Rendering scene...");
                     hideLoadingDialog();
                     btnRender.setEnabled(true);
-                    startActivity(previewIntent);
+                    startActivity(intent);
                 });
 
             } catch (Exception e) {
-                Log.e(TAG, "Scene rendering failed", e);
+                Log.e(TAG, "Scene render error", e);
                 mainHandler.post(() -> showError("Scene generation failed: " + e.getMessage()));
             }
         });
@@ -237,7 +234,6 @@ public class MainActivity extends Activity {
         if (loadingDialog != null && !loadingDialog.isShowing()) {
             loadingDialog.show();
         }
-        // The dialog uses a custom layout, so update text via this method:
         View view = loadingDialog.findViewById(R.id.loadingMessage);
         if (view instanceof TextView) {
             ((TextView) view).setText(message);
@@ -250,9 +246,9 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void showError(String message) {
-        welcomeText.setText(message);
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+    private void showError(String msg) {
+        welcomeText.setText(msg);
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
         btnRender.setEnabled(promptInput.getError() == null);
         progressBar.setVisibility(View.GONE);
         hideLoadingDialog();
@@ -265,17 +261,17 @@ public class MainActivity extends Activity {
             if (textEncoderSession != null) textEncoderSession.close();
             if (ortEnv != null) ortEnv.close();
         } catch (Exception e) {
-            Log.e(TAG, "Error closing ONNX resources", e);
+            Log.e(TAG, "ONNX close error", e);
         }
         executor.shutdownNow();
     }
 
     @Override
-    public void onRequestPermissionsResult(int code, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(code, permissions, grantResults);
+    public void onRequestPermissionsResult(int code, @NonNull String[] perms, @NonNull int[] results) {
+        super.onRequestPermissionsResult(code, perms, results);
         if (code == PERMISSION_REQUEST_CODE) {
             boolean granted = true;
-            for (int r : grantResults) {
+            for (int r : results) {
                 if (r != PackageManager.PERMISSION_GRANTED) {
                     granted = false;
                     break;
@@ -284,8 +280,8 @@ public class MainActivity extends Activity {
             if (granted) {
                 startModelDownload();
             } else {
-                showError("Storage permission denied. Cannot continue.");
+                showError("Storage permission denied. Please allow it in settings.");
             }
         }
     }
-            }
+    }
