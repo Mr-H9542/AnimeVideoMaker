@@ -6,14 +6,13 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.os.AsyncTask;
-import android.view.Window;
 
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
 public class Scene implements Serializable {
-    private transient Bitmap background; // transient to avoid serialization issues
+    private transient Bitmap background;
     private final List<Character> characters = new ArrayList<>();
     private int durationSeconds = 5;
 
@@ -86,8 +85,7 @@ public class Scene implements Serializable {
             @Override
             protected Void doInBackground(Void... voids) {
                 try {
-                    // Simulate long task (e.g., generating animation frames)
-                    Thread.sleep(durationSeconds * 1000L);  // Replace with actual frame generation
+                    Thread.sleep(durationSeconds * 1000L);  // Simulate frame generation
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
@@ -101,4 +99,4 @@ public class Scene implements Serializable {
             }
         }.execute();
     }
-                       }
+    }
