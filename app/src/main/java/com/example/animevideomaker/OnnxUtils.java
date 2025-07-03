@@ -13,15 +13,37 @@ public class OnnxUtils {
     private static final String TAG = "OnnxUtils";
 
     /**
-     * Loads an ONNX model into an OrtSession.
+     * Loads an ONNX model into an OrtSession with optional optimizations.
      *
-     * @param env           The OrtEnvironment to use (non-null).
-     * @param modelFilePath Path to ONNX model file (non-null, absolute).
-     * @return OrtSession instance ready for inference.
-     * @throws OrtException           If loading the model fails.
-     * @throws IllegalArgumentException If environment or file is invalid.
+     * @param env           OrtEnvironment instance (must not be null)
+     * @param modelFilePath Absolute path to the ONNX model file
+     * @return OrtSession instance for inference
+     * @throws OrtException If ONNX loading fails
      */
     public static OrtSession loadModelFromFile(OrtEnvironment env, String modelFilePath) throws OrtException {
+        validateInputs(env, modelFilePath);
+
+        File modelFile = new File(modelFilePath);
+        Log.d(TAG, "Initializing ONNX session for model: " + modelFile.getAbsolutePath());
+
+        OrtSession.SessionOptions options = new OrtSession.SessionOptions();
+
+        // Optional: Enable basic graph optimization
+        options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.BASIC_OPT);
+
+        // Optional: If using GPU (add GPU EP)
+        // options.addCUDA();
+
+        OrtSession session = env.createSession(modelFilePath, options);
+
+        Log.i(TAG, "ONNX model loaded successfully.");
+        return session;
+    }
+
+    /**
+     * Validates inputs before model loading.
+     */
+    private static void validateInputs(OrtEnvironment env, String modelFilePath) {
         if (env == null) {
             throw new IllegalArgumentException("OrtEnvironment cannot be null.");
         }
@@ -32,19 +54,7 @@ public class OnnxUtils {
 
         File modelFile = new File(modelFilePath);
         if (!modelFile.exists() || !modelFile.isFile()) {
-            throw new IllegalArgumentException("Model file does not exist or is not a file: " + modelFilePath);
+            throw new IllegalArgumentException("Model file does not exist: " + modelFilePath);
         }
-
-        Log.d(TAG, "Initializing ONNX session for model: " + modelFile.getAbsolutePath());
-
-        OrtSession.SessionOptions options = new OrtSession.SessionOptions();
-
-        // Optional: Set optimization or execution providers
-        // options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.BASIC_OPT);
-
-        OrtSession session = env.createSession(modelFilePath, options);
-
-        Log.i(TAG, "ONNX model loaded successfully.");
-        return session;
     }
 }
