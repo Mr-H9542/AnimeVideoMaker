@@ -1,123 +1,76 @@
 package com.example.animevideomaker;
 
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
-import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.FileInputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.io.InputStream;
 
+/**
+ * Utility class to manage model downloads and setup.
+ */
 public class ModelDownloader {
-
     private static final String TAG = "ModelDownloader";
+    private static final String MODEL_FOLDER_NAME = "onnx_models";
 
-    // ✅ GitHub release zip file URL
-    private static final String ZIP_URL = "https://github.com/Mr-H9542/AnimeVideoMaker/releases/download/v1.0/assets.zip";
-    private static final String ZIP_FILENAME = "assets.zip";
-
+    /**
+     * Interface for download callback events.
+     */
     public interface DownloadListener {
         void onDownloadSuccess(File modelDir);
         void onDownloadFailed(String error);
     }
 
     /**
-     * Checks if the models folder exists and contains at least some model files.
+     * Downloads models if not already available.
      */
     public static void downloadModelsIfNeeded(Context context, DownloadListener listener) {
-        File modelDir = getModelStorageDir(context);
-        File textEncoder = new File(modelDir, "text_encoder/text_encoder_model.onnx");
+        File modelDir = new File(context.getFilesDir(), MODEL_FOLDER_NAME);
+        File textEncoderModel = new File(modelDir, "text_encoder/text_encoder_model.onnx");
 
-        if (textEncoder.exists() && textEncoder.length() > 0) {
-            Log.i(TAG, "Models already exist at: " + modelDir.getAbsolutePath());
+        if (textEncoderModel.exists()) {
             listener.onDownloadSuccess(modelDir);
             return;
         }
 
-        downloadAndExtractModels(context, modelDir, listener);
-    }
-
-    private static void downloadAndExtractModels(Context context, File outputDir, DownloadListener listener) {
-        ExecutorService executor = Executors.newSingleThreadExecutor();
-        executor.execute(() -> {
-            HttpURLConnection connection = null;
-            File zipFile = new File(outputDir, ZIP_FILENAME);
-
-            try {
-                // Download the zip
-                URL url = new URL(ZIP_URL);
-                connection = (HttpURLConnection) url.openConnection();
-                connection.setConnectTimeout(10000);
-                connection.setReadTimeout(30000);
-
-                int responseCode = connection.getResponseCode();
-                if (responseCode != HttpURLConnection.HTTP_OK) {
-                    listener.onDownloadFailed("Server returned HTTP " + responseCode);
-                    return;
-                }
-
-                try (BufferedInputStream input = new BufferedInputStream(connection.getInputStream());
-                     FileOutputStream output = new FileOutputStream(zipFile)) {
-
-                    byte[] buffer = new byte[8192];
-                    int bytesRead;
-                    while ((bytesRead = input.read(buffer)) != -1) {
-                        output.write(buffer, 0, bytesRead);
-                    }
-                    output.flush();
-                    Log.i(TAG, "Downloaded zip to: " + zipFile.getAbsolutePath());
-                }
-
-                // Extract all files
-                try (ZipInputStream zipInput = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)))) {
-                    ZipEntry entry;
-                    while ((entry = zipInput.getNextEntry()) != null) {
-                        File outFile = new File(outputDir, entry.getName());
-
-                        if (entry.isDirectory()) {
-                            if (!outFile.exists() && !outFile.mkdirs()) {
-                                Log.e(TAG, "Failed to create directory: " + outFile.getAbsolutePath());
-                            }
-                        } else {
-                            File parent = outFile.getParentFile();
-                            if (parent != null && !parent.exists()) parent.mkdirs();
-
-                            try (FileOutputStream outStream = new FileOutputStream(outFile)) {
-                                byte[] buffer = new byte[8192];
-                                int bytesRead;
-                                while ((bytesRead = zipInput.read(buffer)) != -1) {
-                                    outStream.write(buffer, 0, bytesRead);
-                                }
-                            }
-                        }
-                        zipInput.closeEntry();
-                    }
-                }
-
-                Log.i(TAG, "Extracted all models to: " + outputDir.getAbsolutePath());
-                listener.onDownloadSuccess(outputDir);
-            } catch (Exception e) {
-                Log.e(TAG, "Download failed", e);
-                listener.onDownloadFailed("Error: " + e.getMessage());
-            } finally {
-                if (connection != null) connection.disconnect();
-                if (zipFile.exists()) zipFile.delete(); // cleanup
-                executor.shutdown();
-            }
-        });
-    }
-
-    private static File getModelStorageDir(Context context) {
-        File dir = new File(context.getFilesDir(), "models");
-        if (!dir.exists() && !dir.mkdirs()) {
-            Log.e(TAG, "Failed to create model storage directory");
+        try {
+            copyAssetFolder(context, "onnx_models", modelDir);
+            new Handler(Looper.getMainLooper()).post(() -> listener.onDownloadSuccess(modelDir));
+        } catch (Exception e) {
+            Log.e(TAG, "Model download failed", e);
+            new Handler(Looper.getMainLooper()).post(() -> listener.onDownloadFailed(e.getMessage()));
         }
-        return dir;
     }
-                        }
+
+    /**
+     * Recursively copies an asset folder to internal storage.
+     */
+    private static void copyAssetFolder(Context context, String assetPath, File destDir) throws Exception {
+        String[] files = context.getAssets().list(assetPath);
+        if (files == null || files.length == 0) return;
+
+        if (!destDir.exists()) destDir.mkdirs();
+
+        for (String fileName : files) {
+            String assetFilePath = assetPath + "/" + fileName;
+            File outFile = new File(destDir, fileName);
+
+            String[] nestedFiles = context.getAssets().list(assetFilePath);
+            if (nestedFiles != null && nestedFiles.length > 0) {
+                copyAssetFolder(context, assetFilePath, outFile);
+            } else {
+                try (InputStream in = context.getAssets().open(assetFilePath);
+                     FileOutputStream out = new FileOutputStream(outFile)) {
+                    byte[] buffer = new byte[4096];
+                    int read;
+                    while ((read = in.read(buffer)) != -1) {
+                        out.write(buffer, 0, read);
+                    }
+                }
+            }
+        }
+    }
+            }
