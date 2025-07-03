@@ -12,8 +12,8 @@ import android.widget.Toast;
 
 public class PromptInputActivity extends Activity {
 
-    EditText promptInput;
-    Button btnGenerate;
+    private EditText promptInput;
+    private Button btnGenerate;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -23,42 +23,47 @@ public class PromptInputActivity extends Activity {
         promptInput = findViewById(R.id.promptInput);
         btnGenerate = findViewById(R.id.btnGenerate);
 
-        btnGenerate.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                String prompt = promptInput.getText().toString().trim();
+        btnGenerate.setOnClickListener(view -> handlePrompt());
+    }
 
-                if (prompt.isEmpty()) {
-                    Toast.makeText(PromptInputActivity.this, "Please enter a prompt.", Toast.LENGTH_SHORT).show();
-                    return;
-                }
+    private void handlePrompt() {
+        String prompt = promptInput.getText().toString().trim();
 
-                AnimationRequest request = AITextParser.parse(prompt);
+        if (prompt.isEmpty()) {
+            Toast.makeText(this, "Please enter a prompt.", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
-                // Build character
-                Character character = new Character();
-                character.setType(request.characterType);
-                character.setColor(request.characterColor);
-                character.setAction(request.action);
+        try {
+            AnimationRequest request = AITextParser.parse(prompt);
 
-                // Create background
-                Bitmap bg = Bitmap.createBitmap(640, 480, Bitmap.Config.ARGB_8888);
-                Canvas canvas = new Canvas(bg);
-                int bgColor = request.background.equals("white") ? 0xFFFFFFFF : 0xFF000000;
-                canvas.drawColor(bgColor);
+            // Build character from request
+            Character character = new Character();
+            character.setType(request.characterType);
+            character.setColor(request.characterColor);
+            character.setAction(request.action);
 
-                // Create scene
-                Scene scene = new Scene(bg);
-                scene.setDuration(request.duration);
-                scene.addCharacter(character);
+            // Create a blank background
+            Bitmap bg = Bitmap.createBitmap(640, 480, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bg);
+            int bgColor = request.background.equalsIgnoreCase("white") ? 0xFFFFFFFF : 0xFF000000;
+            canvas.drawColor(bgColor);
 
-                // Pass scene using holder
-                SceneHolder.scene = scene;
+            // Create scene
+            Scene scene = new Scene(bg);  // Ensure Scene has a Bitmap constructor
+            scene.setDuration(request.duration);
+            scene.addCharacter(character);
 
-                // Go to preview
-                Intent intent = new Intent(PromptInputActivity.this, CharacterPreviewActivity.class);
-                startActivity(intent);
-            }
-        });
+            // Pass scene via holder
+            SceneHolder.scene = scene;
+
+            // Launch preview
+            Intent intent = new Intent(this, CharacterPreviewActivity.class);
+            startActivity(intent);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            Toast.makeText(this, "Failed to generate animation from prompt.", Toast.LENGTH_SHORT).show();
+        }
     }
 }
