@@ -1,101 +1,95 @@
 package com.example.animevideomaker;
 
 import android.content.Context;
-import android.os.AsyncTask;
+import android.os.Environment;
 import android.util.Log;
 
+import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class ModelDownloader {
 
     private static final String TAG = "ModelDownloader";
 
-    // ✅ GitHub Release model file URL (update if version or name changes)
-    private static final String MODEL_URL = "https://github.com/Mr-H9542/AnimeVideoMaker/releases/download/v1.0/model.onnx";
-
-    // ✅ Model filename when saved locally
-    private static final String MODEL_FILENAME = "model.onnx";
+    // ✅ Change this URL to your real ONNX model URL
+    private static final String MODEL_URL = "https://example.com/path-to-your-model.onnx";
+    private static final String MODEL_FILENAME = "text_encoder_model.onnx";
 
     public interface DownloadListener {
-        void onDownloadSuccess(File file);
+        void onDownloadSuccess(File modelFile);
         void onDownloadFailed(String error);
     }
 
+    /**
+     * Checks if model exists. If not, downloads it.
+     */
     public static void downloadModelIfNeeded(Context context, DownloadListener listener) {
-        File modelFile = new File(context.getFilesDir(), MODEL_FILENAME);
-        if (modelFile.exists()) {
-            Log.i(TAG, "Model already exists: " + modelFile.getAbsolutePath());
-            if (listener != null) listener.onDownloadSuccess(modelFile);
-        } else {
-            new DownloadTask(context.getApplicationContext(), modelFile, listener).execute();
+        File modelFile = new File(getModelStorageDir(context), MODEL_FILENAME);
+
+        if (modelFile.exists() && modelFile.length() > 0) {
+            Log.i(TAG, "Model already exists at: " + modelFile.getAbsolutePath());
+            listener.onDownloadSuccess(modelFile);
+            return;
         }
+
+        downloadModel(context, modelFile, listener);
     }
 
-    private static class DownloadTask extends AsyncTask<Void, Void, Boolean> {
-
-        private final Context context;
-        private final File destFile;
-        private final DownloadListener listener;
-        private String errorMsg = null;
-
-        DownloadTask(Context context, File destFile, DownloadListener listener) {
-            this.context = context;
-            this.destFile = destFile;
-            this.listener = listener;
-        }
-
-        @Override
-        protected Boolean doInBackground(Void... voids) {
+    private static void downloadModel(Context context, File destinationFile, DownloadListener listener) {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        executor.execute(() -> {
+            HttpURLConnection connection = null;
             try {
                 URL url = new URL(MODEL_URL);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0");
-                conn.connect();
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setConnectTimeout(10000);
+                connection.setReadTimeout(30000);
 
-                if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
-                    errorMsg = "Server returned HTTP " + conn.getResponseCode();
-                    return false;
+                int responseCode = connection.getResponseCode();
+                if (responseCode != HttpURLConnection.HTTP_OK) {
+                    listener.onDownloadFailed("Server returned HTTP " + responseCode);
+                    return;
                 }
 
-                try (InputStream input = conn.getInputStream();
-                     FileOutputStream output = new FileOutputStream(destFile)) {
+                try (BufferedInputStream input = new BufferedInputStream(connection.getInputStream());
+                     FileOutputStream output = new FileOutputStream(destinationFile)) {
 
                     byte[] buffer = new byte[8192];
                     int bytesRead;
+
                     while ((bytesRead = input.read(buffer)) != -1) {
                         output.write(buffer, 0, bytesRead);
                     }
+
                     output.flush();
+                    Log.i(TAG, "Model downloaded to: " + destinationFile.getAbsolutePath());
+                    listener.onDownloadSuccess(destinationFile);
+
+                } catch (Exception ioEx) {
+                    listener.onDownloadFailed("Failed to save model: " + ioEx.getMessage());
                 }
-
-                conn.disconnect();
-
-                if (!destFile.exists() || destFile.length() == 0) {
-                    errorMsg = "Downloaded file is empty or missing";
-                    return false;
-                }
-
-                Log.i(TAG, "Model downloaded successfully: " + destFile.getAbsolutePath());
-                return true;
 
             } catch (Exception e) {
                 Log.e(TAG, "Download failed", e);
-                errorMsg = e.getMessage();
-                return false;
+                listener.onDownloadFailed("Model download error: " + e.getMessage());
+            } finally {
+                if (connection != null) connection.disconnect();
+                executor.shutdown();
             }
-        }
-
-        @Override
-        protected void onPostExecute(Boolean success) {
-            if (success) {
-                if (listener != null) listener.onDownloadSuccess(destFile);
-            } else {
-                if (listener != null) listener.onDownloadFailed(errorMsg != null ? errorMsg : "Unknown error");
-            }
-        }
+        });
     }
-                        }
+
+    private static File getModelStorageDir(Context context) {
+        File dir = new File(context.getFilesDir(), "models");
+        if (!dir.exists()) {
+            boolean created = dir.mkdirs();
+            if (!created) Log.e(TAG, "Failed to create model storage directory");
+        }
+        return dir;
+    }
+}
