@@ -31,7 +31,6 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
@@ -44,15 +43,15 @@ public class MainActivity extends Activity {
 
     private static final String TAG = "MainActivity";
     private static final int PERMISSION_REQUEST_CODE = 1001;
-    private static final int DEFAULT_DURATION_SECONDS = 5;
-    private static final int BACKGROUND_WIDTH = 640;
-    private static final int BACKGROUND_HEIGHT = 480;
+    private static final int BACKGROUND_WIDTH = 720; // Aligned with Scene
+    private static final int BACKGROUND_HEIGHT = 1280;
     private static final int MAX_ZIP_SIZE = 1024 * 1024 * 500; // 500 MB max
     private static final int MAX_RETRIES = 3;
-    private static final String DRIVE_FILE_ID = "1YNmra-wLt-VFdTfcg2BRyc9aBXQbNL8G"; // From provided link
+    private static final String DRIVE_FILE_ID = "1YNmra-wLt-VFdTfcg2BRyc9aBXQbNL8G";
     private static final String MODEL_URL = "https://drive.google.com/uc?export=download&id=" + DRIVE_FILE_ID;
     private static final String ZIP_NAME = "models.zip";
     private static final String MODEL_DIR = "ai_model";
+    private static final int MAX_PROMPT_LENGTH = 100;
 
     private TextView welcomeText;
     private EditText promptInput;
@@ -72,8 +71,8 @@ public class MainActivity extends Activity {
 
         initViews();
         setupLoadingDialog();
+        promptInput.setHint("E.g., 'red star bounce on blue background for 5 seconds'");
 
-        // Start model download and initialization
         executor.execute(() -> {
             try {
                 ensureModelsDownloaded();
@@ -108,7 +107,7 @@ public class MainActivity extends Activity {
 
     private void setupLoadingDialog() {
         loadingDialog = new AlertDialog.Builder(this)
-                .setView(R.layout.dialog_loading) // Assumes a layout with a ProgressBar and TextView
+                .setView(R.layout.dialog_loading)
                 .setCancelable(false)
                 .create();
     }
@@ -128,7 +127,7 @@ public class MainActivity extends Activity {
 
     private boolean hasRequiredPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            return true; // Scoped storage, no permissions needed for internal storage
+            return true;
         }
         return ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
                 == PackageManager.PERMISSION_GRANTED;
@@ -139,7 +138,7 @@ public class MainActivity extends Activity {
             if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
                 new AlertDialog.Builder(this)
                         .setTitle("Storage Permission Needed")
-                        .setMessage("This app needs storage access to save and load AI models.")
+                        .setMessage("This app needs storage access to save and load AI models and videos.")
                         .setPositiveButton("Grant", (dialog, which) -> ActivityCompat.requestPermissions(
                                 MainActivity.this,
                                 new String[]{Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE},
@@ -202,51 +201,48 @@ public class MainActivity extends Activity {
     private void processRenderRequest() {
         executor.execute(() -> {
             String prompt = promptInput.getText() != null ? promptInput.getText().toString().trim() : "";
-            if (prompt.isEmpty()) {
-                mainHandler.post(() -> showError("Please enter a valid prompt."));
+            if (prompt.isEmpty() || prompt.length() > MAX_PROMPT_LENGTH) {
+                mainHandler.post(() -> showError("Please enter a valid prompt (1-" + MAX_PROMPT_LENGTH + " characters)."));
                 return;
             }
 
             AnimationRequest req = AITextParser.parse(prompt);
-            if (req == null) {
-                mainHandler.post(() -> showError("Failed to parse prompt. Try again."));
+            if (req == null || req.characterType == null || req.characterColor == null || req.action == null) {
+                mainHandler.post(() -> showError("Incomplete prompt. Try: 'color type action on background for duration seconds'"));
                 return;
             }
 
-            String characterType = req.characterType != null ? req.characterType : "star";
-            String characterColor = req.characterColor != null ? req.characterColor : "blue";
-            String action = req.action != null ? req.action : "idle";
-            int duration = req.duration > 0 ? req.duration : DEFAULT_DURATION_SECONDS;
-            String bgColorName = req.background != null ? req.background.toLowerCase() : "black";
+            String characterType = req.characterType;
+            String characterColor = req.characterColor;
+            String action = req.action;
+            int duration = req.duration;
+            String bgColorName = req.background.equals("default") ? "black" : req.background.toLowerCase();
 
-            Character character = new Character();
-            character.setType(characterType);
-            character.setColor(characterColor);
-            character.setAction(action);
+            // Validate inputs
+            boolean validColor = List.of("red", "blue", "green", "yellow").contains(characterColor);
+            boolean validType = List.of("star", "ball", "cat").contains(characterType);
+            boolean validAction = List.of("bounce", "rotate", "walk", "jump", "idle").contains(action);
+            boolean validBackground = List.of("white", "red", "blue", "gray", "black").contains(bgColorName);
 
-            Bitmap bgBitmap = Bitmap.createBitmap(BACKGROUND_WIDTH, BACKGROUND_HEIGHT, Bitmap.Config.ARGB_8888);
-            Canvas canvas = new Canvas(bgBitmap);
-            int bgColor = switch (bgColorName) {
-                case "white" -> 0xFFFFFFFF;
-                case "red" -> 0xFFFF0000;
-                case "blue" -> 0xFF0000FF;
-                case "gray" -> 0xFF888888;
-                default -> 0xFF000000;
-            };
-            canvas.drawColor(bgColor);
+            if (!validColor || !validType || !validAction || !validBackground) {
+                mainHandler.post(() -> showError("Invalid prompt values. Use: colors (red, blue, green, yellow), types (star, ball, cat), actions (bounce, rotate, walk, jump, idle), backgrounds (white, red, blue, gray, black)."));
+                return;
+            }
 
+            Character character = new Character("char_" + System.currentTimeMillis(), characterType, characterColor, action, new PointF(100, 100), true);
             Scene scene = new Scene();
-            scene.setBackground(bgBitmap);
-            scene.setDuration(duration);
-            scene.setCharacter(character);
+            scene.configureFromRequest(req); // Uses Scene's configureFromRequest to set background and character
 
-            SceneHolder.scene = scene;
+            // Pass Scene via Intent instead of SceneHolder
+            Intent intent = new Intent(MainActivity.this, CharacterPreviewActivity.class);
+            // Note: Scene is not Serializable by default. Use a workaround or ensure it's handled in CharacterPreviewActivity
+            SceneHolder.scene = scene; // Temporary use of SceneHolder until serialization is resolved
 
             mainHandler.post(() -> {
-                welcomeText.setText("Rendering started...");
+                welcomeText.setText("Rendering: " + req.toString());
                 hideLoadingDialog();
                 btnRender.setEnabled(true);
-                startActivity(new Intent(MainActivity.this, CharacterPreviewActivity.class));
+                startActivity(intent);
             });
         });
     }
@@ -312,13 +308,13 @@ public class MainActivity extends Activity {
                     inputStream.close();
                 }
                 Log.d(TAG, "Downloaded ZIP file size: " + destination.length() + " bytes");
-                return; // Success, exit retry loop
+                return;
             } catch (Exception e) {
                 attempt++;
                 if (attempt >= MAX_RETRIES) {
                     throw new Exception("Failed to download file after " + MAX_RETRIES + " attempts: " + e.getMessage(), e);
                 }
-                Thread.sleep(1000 * attempt); // Exponential backoff
+                Thread.sleep(1000 * attempt);
             }
         }
     }
@@ -416,4 +412,4 @@ public class MainActivity extends Activity {
         }
         executor.shutdownNow();
     }
-                         }
+                    }
