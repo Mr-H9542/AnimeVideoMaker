@@ -75,4 +75,42 @@ public class Character implements Serializable {
     public int hashCode() {
         return Objects.hash(id, type, color, action, position, mainCharacter);
     }
-}
+
+    /**
+     * Creates a Character from a plain text description using simple keyword matching.
+     * Example input: "blue star jumping"
+     */
+    public static Character fromTextInput(String input) {
+        if (input == null || input.isEmpty()) {
+            return new Character();
+        }
+
+        String lower = input.toLowerCase();
+
+        // Simple keywords — extend or replace with your ML model results
+        String type = "star";  // default
+        if (lower.contains("circle")) type = "circle";
+        else if (lower.contains("square")) type = "square";
+        else if (lower.contains("star")) type = "star";
+
+        String color = "blue"; // default
+        if (lower.contains("red")) color = "red";
+        else if (lower.contains("green")) color = "green";
+        else if (lower.contains("yellow")) color = "yellow";
+        else if (lower.contains("black")) color = "black";
+
+        String action = "idle"; // default
+        if (lower.contains("jump") || lower.contains("jumping")) action = "jump";
+        else if (lower.contains("bounce")) action = "bounce";
+        else if (lower.contains("run") || lower.contains("running")) action = "run";
+
+        return new Character(
+            "char_" + System.currentTimeMillis(),
+            type,
+            color,
+            action,
+            new PointF(100, 100), // default position
+            true
+        );
+    }
+            }
