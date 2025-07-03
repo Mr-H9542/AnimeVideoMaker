@@ -1,3 +1,20 @@
+package com.example.animevideomaker;
+
+import android.app.Dialog;
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.PointF;
+import android.os.Handler;
+import android.os.Looper;
+
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 public class Scene implements Serializable {
     private static final ExecutorService executor = Executors.newSingleThreadExecutor();
     private static final Handler uiHandler = new Handler(Looper.getMainLooper());
@@ -60,6 +77,22 @@ public class Scene implements Serializable {
         setDuration(req.duration);
     }
 
+    public void setDuration(int seconds) {
+        this.durationSeconds = Math.max(1, seconds);
+    }
+
+    public int getDuration() {
+        return durationSeconds;
+    }
+
+    public Bitmap getBackground() {
+        return background;
+    }
+
+    public List<Character> getCharacters() {
+        return new ArrayList<>(characters);
+    }
+
     public void generateFrames(Context context, Dialog loadingDialog, Runnable onComplete) {
         if (loadingDialog != null) {
             uiHandler.post(loadingDialog::show);
@@ -80,4 +113,4 @@ public class Scene implements Serializable {
             });
         });
     }
-}
+                }
