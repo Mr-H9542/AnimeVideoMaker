@@ -2,7 +2,7 @@ package com.example.animevideomaker;
 
 import android.graphics.PointF;
 
-public class Character {
+public class Character implements java.io.Serializable {
     private String id;
     private String type;
     private String color;
@@ -10,7 +10,6 @@ public class Character {
     private PointF position;
     private boolean mainCharacter;
 
-    // Constructor with all fields
     public Character(String id, String type, String color, String action, PointF position, boolean mainCharacter) {
         this.id = id;
         this.type = type;
@@ -20,12 +19,10 @@ public class Character {
         this.mainCharacter = mainCharacter;
     }
 
-    // Optional: default constructor (if you want)
     public Character() {
-        this("default", "star", "blue", "idle", new PointF(0, 0), true);
+        this("default", "star", "blue", "bounce", new PointF(100, 100), true); // Aligned with AnimationRequest
     }
 
-    // Getters and setters
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
 
@@ -44,10 +41,9 @@ public class Character {
     public boolean isMainCharacter() { return mainCharacter; }
     public void setMainCharacter(boolean mainCharacter) { this.mainCharacter = mainCharacter; }
 
-    // New method to get asset path
     public String getAssetPath(String action, int size) {
-        String baseType = (type != null) ? type : "default";
-        String baseAction = (action != null) ? action : "idle";
+        String baseType = (type != null) ? type : "star";
+        String baseAction = (action != null) ? action : "bounce";
         return "assets/" + baseType + "_" + baseAction + "_" + size + ".png";
     }
 }
