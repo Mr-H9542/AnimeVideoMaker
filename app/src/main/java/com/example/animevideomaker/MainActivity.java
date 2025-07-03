@@ -2,6 +2,7 @@ package com.example.animevideomaker;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
@@ -16,6 +17,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
@@ -30,6 +32,8 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -39,14 +43,13 @@ import ai.onnxruntime.OrtSession;
 public class MainActivity extends Activity {
 
     private static final String TAG = "MainActivity";
-
     private static final int PERMISSION_REQUEST_CODE = 1001;
     private static final int DEFAULT_DURATION_SECONDS = 5;
     private static final int BACKGROUND_WIDTH = 640;
     private static final int BACKGROUND_HEIGHT = 480;
-
-    // Google Drive file ID for your model ZIP
-    private static final String DRIVE_FILE_ID = "1YNmra-wLt-VFdTfcg2BRyc9aBXQbNL8G";
+    private static final int MAX_ZIP_SIZE = 1024 * 1024 * 500; // 500 MB max
+    private static final int MAX_RETRIES = 3;
+    private static final String DRIVE_FILE_ID = "1YNmra-wLt-VFdTfcg2BRyc9aBXQbNL8G"; // From provided link
     private static final String MODEL_URL = "https://drive.google.com/uc?export=download&id=" + DRIVE_FILE_ID;
     private static final String ZIP_NAME = "models.zip";
     private static final String MODEL_DIR = "ai_model";
@@ -55,11 +58,12 @@ public class MainActivity extends Activity {
     private EditText promptInput;
     private Button btnRender;
     private ProgressBar progressBar;
+    private AlertDialog loadingDialog;
 
     private OrtEnvironment ortEnv;
     private OrtSession textEncoderSession;
-
-    private Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,27 +71,22 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
 
         initViews();
+        setupLoadingDialog();
 
-        // Start model download and load process on background thread
-        new Thread(() -> {
+        // Start model download and initialization
+        executor.execute(() -> {
             try {
                 ensureModelsDownloaded();
                 mainHandler.post(this::checkPermissionsAndLoadModels);
             } catch (Exception e) {
                 Log.e(TAG, "Error during model download/init", e);
-                mainHandler.post(() -> {
-                    welcomeText.setText("Error downloading models: " + e.getMessage());
-                    btnRender.setEnabled(false);
-                    progressBar.setVisibility(View.GONE);
-                });
+                mainHandler.post(() -> showError("Error downloading models: " + e.getMessage()));
             }
-        }).start();
+        });
 
         btnRender.setOnClickListener(v -> {
             btnRender.setEnabled(false);
-            welcomeText.setText("");
-            progressBar.setVisibility(View.VISIBLE);
-
+            showLoadingDialog("Processing request...");
             if (hasRequiredPermissions()) {
                 processRenderRequest();
             } else {
@@ -104,21 +103,32 @@ public class MainActivity extends Activity {
 
         progressBar.setVisibility(View.GONE);
         welcomeText.setText("Welcome to Anime Video Maker");
-        btnRender.setEnabled(false); // Disable until models load
+        btnRender.setEnabled(false);
     }
 
-    private void checkPermissionsAndLoadModels() {
-        if (hasRequiredPermissions()) {
-            loadOnnxModelsAsync();
-        } else {
-            requestNecessaryPermissions();
+    private void setupLoadingDialog() {
+        loadingDialog = new AlertDialog.Builder(this)
+                .setView(R.layout.dialog_loading) // Assumes a layout with a ProgressBar and TextView
+                .setCancelable(false)
+                .create();
+    }
+
+    private void showLoadingDialog(String message) {
+        if (loadingDialog != null) {
+            loadingDialog.setMessage(message);
+            loadingDialog.show();
+        }
+    }
+
+    private void hideLoadingDialog() {
+        if (loadingDialog != null && loadingDialog.isShowing()) {
+            loadingDialog.dismiss();
         }
     }
 
     private boolean hasRequiredPermissions() {
-        // Since we only save models internally, no storage permission needed for Android 10+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            return true;
+            return true; // Scoped storage, no permissions needed for internal storage
         }
         return ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
                 == PackageManager.PERMISSION_GRANTED;
@@ -126,23 +136,29 @@ public class MainActivity extends Activity {
 
     private void requestNecessaryPermissions() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            ActivityCompat.requestPermissions(this,
-                    new String[]{
-                            Manifest.permission.READ_EXTERNAL_STORAGE,
-                            Manifest.permission.WRITE_EXTERNAL_STORAGE
-                    },
-                    PERMISSION_REQUEST_CODE);
+            if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+                new AlertDialog.Builder(this)
+                        .setTitle("Storage Permission Needed")
+                        .setMessage("This app needs storage access to save and load AI models.")
+                        .setPositiveButton("Grant", (dialog, which) -> ActivityCompat.requestPermissions(
+                                MainActivity.this,
+                                new String[]{Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                                PERMISSION_REQUEST_CODE))
+                        .setNegativeButton("Deny", (dialog, which) -> showError("Permission denied. Cannot proceed without storage access."))
+                        .show();
+            } else {
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                        PERMISSION_REQUEST_CODE);
+            }
         } else {
-            // No permissions needed for internal storage on Android 10+
             loadOnnxModelsAsync();
         }
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
-                                           @NonNull int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-
         if (requestCode == PERMISSION_REQUEST_CODE) {
             boolean allGranted = grantResults.length > 0;
             for (int result : grantResults) {
@@ -151,22 +167,18 @@ public class MainActivity extends Activity {
                     break;
                 }
             }
-
             if (allGranted) {
                 loadOnnxModelsAsync();
             } else {
-                welcomeText.setText("Permission denied. Cannot render without storage access.");
-                btnRender.setEnabled(true);
-                progressBar.setVisibility(View.GONE);
+                showError("Permission denied. Cannot render without storage access.");
             }
         }
     }
 
     private void loadOnnxModelsAsync() {
-        new Thread(() -> {
+        executor.execute(() -> {
             try {
                 ortEnv = OrtEnvironment.getEnvironment();
-
                 File modelDir = new File(getFilesDir(), MODEL_DIR);
                 File textEncoderFile = new File(modelDir, "animagine-xl/text_encoder/model.onnx");
 
@@ -175,41 +187,29 @@ public class MainActivity extends Activity {
                 }
 
                 textEncoderSession = OnnxUtils.loadModelFromFile(ortEnv, textEncoderFile.getAbsolutePath());
-
                 mainHandler.post(() -> {
                     welcomeText.setText("AI models loaded successfully.");
                     btnRender.setEnabled(true);
+                    hideLoadingDialog();
                 });
             } catch (Exception e) {
-                Log.e(TAG, "Failed to load ONNX model.", e);
-                mainHandler.post(() -> {
-                    welcomeText.setText("Failed to initialize AI models.");
-                    btnRender.setEnabled(false);
-                });
+                Log.e(TAG, "Failed to load ONNX model", e);
+                mainHandler.post(() -> showError("Failed to initialize AI models: " + e.getMessage()));
             }
-        }).start();
+        });
     }
 
     private void processRenderRequest() {
-        new Thread(() -> {
+        executor.execute(() -> {
             String prompt = promptInput.getText() != null ? promptInput.getText().toString().trim() : "";
-
             if (prompt.isEmpty()) {
-                mainHandler.post(() -> {
-                    welcomeText.setText("Please enter a prompt.");
-                    btnRender.setEnabled(true);
-                    progressBar.setVisibility(View.GONE);
-                });
+                mainHandler.post(() -> showError("Please enter a valid prompt."));
                 return;
             }
 
             AnimationRequest req = AITextParser.parse(prompt);
             if (req == null) {
-                mainHandler.post(() -> {
-                    welcomeText.setText("Failed to parse prompt. Try again.");
-                    btnRender.setEnabled(true);
-                    progressBar.setVisibility(View.GONE);
-                });
+                mainHandler.post(() -> showError("Failed to parse prompt. Try again."));
                 return;
             }
 
@@ -226,7 +226,6 @@ public class MainActivity extends Activity {
 
             Bitmap bgBitmap = Bitmap.createBitmap(BACKGROUND_WIDTH, BACKGROUND_HEIGHT, Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bgBitmap);
-
             int bgColor = switch (bgColorName) {
                 case "white" -> 0xFFFFFFFF;
                 case "red" -> 0xFFFF0000;
@@ -245,14 +244,12 @@ public class MainActivity extends Activity {
 
             mainHandler.post(() -> {
                 welcomeText.setText("Rendering started...");
-                progressBar.setVisibility(View.GONE);
+                hideLoadingDialog();
                 btnRender.setEnabled(true);
                 startActivity(new Intent(MainActivity.this, CharacterPreviewActivity.class));
             });
-        }).start();
+        });
     }
-
-    // --- Model download & unzip with Google Drive confirmation token handling ---
 
     private void ensureModelsDownloaded() throws Exception {
         File modelDir = new File(getFilesDir(), MODEL_DIR);
@@ -261,128 +258,162 @@ public class MainActivity extends Activity {
             return;
         }
 
-        Log.d(TAG, "Downloading model zip...");
+        mainHandler.post(() -> showLoadingDialog("Downloading AI models..."));
         File zipFile = new File(getFilesDir(), ZIP_NAME);
         downloadFileFromGoogleDrive(DRIVE_FILE_ID, zipFile);
 
-        Log.d(TAG, "Extracting model files...");
+        mainHandler.post(() -> showLoadingDialog("Extracting AI models..."));
         unzip(zipFile.getAbsolutePath(), modelDir.getAbsolutePath());
 
-        boolean deleted = zipFile.delete();
-        if (!deleted) {
+        if (!zipFile.delete()) {
             Log.w(TAG, "Could not delete temporary zip file.");
         }
-
         Log.d(TAG, "Models downloaded and extracted.");
     }
 
-    /**
-     * Downloads a file from Google Drive with confirmation token handling for large files.
-     * @param fileId Google Drive file ID
-     * @param destination Local file destination
-     * @throws Exception
-     */
     private void downloadFileFromGoogleDrive(String fileId, File destination) throws Exception {
         String baseUrl = "https://drive.google.com/uc?export=download";
+        int attempt = 0;
 
-        // First request to get confirmation token if needed
-        URL url = new URL(baseUrl + "&id=" + fileId);
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.setInstanceFollowRedirects(false);
+        while (attempt < MAX_RETRIES) {
+            try {
+                URL url = new URL(baseUrl + "&id=" + fileId);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setInstanceFollowRedirects(false);
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+                conn.connect();
 
-        String confirmToken = null;
+                String confirmToken = getConfirmToken(conn);
+                InputStream inputStream;
+
+                if (confirmToken != null) {
+                    String downloadUrl = baseUrl + "&confirm=" + confirmToken + "&id=" + fileId;
+                    URL confirmedUrl = new URL(downloadUrl);
+                    HttpURLConnection downloadConn = (HttpURLConnection) confirmedUrl.openConnection();
+                    downloadConn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+                    downloadConn.connect();
+                    inputStream = downloadConn.getInputStream();
+                } else {
+                    inputStream = conn.getInputStream();
+                }
+
+                try (FileOutputStream output = new FileOutputStream(destination)) {
+                    byte[] buffer = new byte[4096];
+                    int bytesRead;
+                    long totalBytes = 0;
+                    while ((bytesRead = inputStream.read(buffer)) != -1) {
+                        totalBytes += bytesRead;
+                        if (totalBytes > MAX_ZIP_SIZE) {
+                            throw new SecurityException("ZIP file exceeds maximum size limit.");
+                        }
+                        output.write(buffer, 0, bytesRead);
+                    }
+                } finally {
+                    inputStream.close();
+                }
+                Log.d(TAG, "Downloaded ZIP file size: " + destination.length() + " bytes");
+                return; // Success, exit retry loop
+            } catch (Exception e) {
+                attempt++;
+                if (attempt >= MAX_RETRIES) {
+                    throw new Exception("Failed to download file after " + MAX_RETRIES + " attempts: " + e.getMessage(), e);
+                }
+                Thread.sleep(1000 * attempt); // Exponential backoff
+            }
+        }
+    }
+
+    private String getConfirmToken(HttpURLConnection conn) throws Exception {
         Map<String, List<String>> headers = conn.getHeaderFields();
-
-        // Look for "Set-Cookie" headers containing confirmation token
         List<String> cookies = headers.get("Set-Cookie");
         if (cookies != null) {
             for (String cookie : cookies) {
                 if (cookie.contains("download_warning")) {
-                    int start = cookie.indexOf("download_warning");
-                    int end = cookie.indexOf(";", start);
-                    confirmToken = cookie.substring(start, end);
-                    break;
-                }
-            }
-        }
-
-        // If confirmToken not found in cookies, try to parse from response body
-        if (confirmToken == null) {
-            InputStream is = conn.getInputStream();
-            BufferedReader reader = new BufferedReader(new InputStreamReader(is));
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line private void downloadFileFromGoogleDrive(String fileId, File destination) throws Exception {
-    String baseUrl = "https://drive.google.com/uc?export=download";
-
-    // First request to get confirmation token if needed
-    URL url = new URL(baseUrl + "&id=" + fileId);
-    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-    conn.setInstanceFollowRedirects(false);
-    conn.connect();
-
-    String confirmToken = getConfirmToken(conn);
-
-    InputStream inputStream;
-
-    if (confirmToken != null) {
-        // Second request with confirmation token to download file
-        String downloadUrl = baseUrl + "&confirm=" + confirmToken + "&id=" + fileId;
-        URL confirmedUrl = new URL(downloadUrl);
-        HttpURLConnection downloadConn = (HttpURLConnection) confirmedUrl.openConnection();
-        downloadConn.connect();
-        inputStream = downloadConn.getInputStream();
-    } else {
-        // No token needed, use initial input stream
-        inputStream = conn.getInputStream();
-    }
-
-    // Write input stream to file
-    try (FileOutputStream output = new FileOutputStream(destination)) {
-        byte[] buffer = new byte[4096];
-        int bytesRead;
-        while ((bytesRead = inputStream.read(buffer)) != -1) {
-            output.write(buffer, 0, bytesRead);
-        }
-    }
-    inputStream.close();
-}
-
-// Helper to parse confirmation token from cookies or page content
-private String getConfirmToken(HttpURLConnection conn) throws Exception {
-    // Check cookies for token
-    Map<String, List<String>> headers = conn.getHeaderFields();
-    List<String> cookies = headers.get("Set-Cookie");
-    if (cookies != null) {
-        for (String cookie : cookies) {
-            if (cookie.contains("download_warning")) {
-                // Example cookie: download_warning=some_token;
-                String[] parts = cookie.split(";");
-                for (String part : parts) {
-                    if (part.startsWith("download_warning")) {
-                        return part.split("=")[1];
+                    String[] parts = cookie.split(";");
+                    for (String part : parts) {
+                        if (part.startsWith("download_warning")) {
+                            return part.split("=")[1].trim();
+                        }
                     }
                 }
             }
         }
-    }
 
-    // Fallback: parse token from HTML content (rarely needed)
-    try (InputStream is = conn.getInputStream();
-         BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
-        String line;
-        while ((line = reader.readLine()) != null) {
-            if (line.contains("confirm=")) {
-                int start = line.indexOf("confirm=") + 8;
-                int end = line.indexOf("&", start);
-                if (end == -1) end = line.indexOf("\"", start);
-                if (end != -1) {
-                    return line.substring(start, end);
+        try (InputStream is = conn.getInputStream();
+             BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.contains("confirm=")) {
+                    int start = line.indexOf("confirm=") + 8;
+                    int end = line.indexOf("&", start);
+                    if (end == -1) end = line.indexOf("\"", start);
+                    if (end != -1) {
+                        return line.substring(start, end);
+                    }
                 }
             }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to parse confirmation token from HTML", e);
         }
-    } catch (Exception ignored) {
+        return null;
     }
 
-    return null;
-                                         }
+    private void unzip(String zipFilePath, String destDir) throws Exception {
+        File destDirFile = new File(destDir);
+        if (!destDirFile.exists()) destDirFile.mkdirs();
+        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipFilePath))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                File newFile = new File(destDirFile, entry.getName());
+                if (!newFile.getCanonicalPath().startsWith(destDirFile.getCanonicalPath())) {
+                    throw new SecurityException("Invalid ZIP entry: " + entry.getName());
+                }
+                if (entry.isDirectory()) {
+                    newFile.mkdirs();
+                } else {
+                    try (FileOutputStream fos = new FileOutputStream(newFile)) {
+                        byte[] buffer = new byte[4096];
+                        int len;
+                        long totalBytes = 0;
+                        while ((len = zis.read(buffer)) > 0) {
+                            totalBytes += len;
+                            if (totalBytes > MAX_ZIP_SIZE) {
+                                throw new SecurityException("ZIP entry exceeds maximum size limit.");
+                            }
+                            fos.write(buffer, 0, len);
+                        }
+                    }
+                }
+                zis.closeEntry();
+            }
+        }
+    }
+
+    private void showError(String message) {
+        welcomeText.setText(message);
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+        btnRender.setEnabled(true);
+        progressBar.setVisibility(View.GONE);
+        hideLoadingDialog();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (textEncoderSession != null) {
+            try {
+                textEncoderSession.close();
+            } catch (Exception e) {
+                Log.e(TAG, "Error closing OrtSession", e);
+            }
+        }
+        if (ortEnv != null) {
+            try {
+                ortEnv.close();
+            } catch (Exception e) {
+                Log.e(TAG, "Error closing OrtEnvironment", e);
+            }
+        }
+        executor.shutdownNow();
+    }
+                         }
