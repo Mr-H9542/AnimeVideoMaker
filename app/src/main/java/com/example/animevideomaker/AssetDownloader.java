@@ -9,8 +9,10 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+
 import java.net.HttpURLConnection;
 import java.net.URL;
+
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -35,19 +37,17 @@ public class AssetDownloader {
         if (targetDir.exists() && targetDir.isDirectory() && targetDir.list().length > 0) {
             Log.d(TAG, "Assets already available.");
             callback.onReady();
-            return;
+        } else {
+            new DownloadAndExtractTask(context, callback).execute();
         }
-
-        new DownloadAndExtractTask(context, callback).execute();
     }
 
     private static class DownloadAndExtractTask extends AsyncTask<Void, Void, Boolean> {
-
         private final Context context;
         private final OnAssetsReadyCallback callback;
-        private Exception failure;
+        private Exception error;
 
-        DownloadAndExtractTask(Context context, OnAssetsReadyCallback callback) {
+        public DownloadAndExtractTask(Context context, OnAssetsReadyCallback callback) {
             this.context = context.getApplicationContext();
             this.callback = callback;
         }
@@ -60,8 +60,8 @@ public class AssetDownloader {
                 unzip(zipFile.getAbsolutePath(), context.getFilesDir().getAbsolutePath());
                 return true;
             } catch (Exception e) {
-                e.printStackTrace();
-                failure = e;
+                Log.e(TAG, "Error downloading/unzipping assets", e);
+                error = e;
                 return false;
             }
         }
@@ -71,7 +71,7 @@ public class AssetDownloader {
             if (success) {
                 callback.onReady();
             } else {
-                callback.onFailed(failure);
+                callback.onFailed(error);
             }
         }
     }
@@ -85,50 +85,49 @@ public class AssetDownloader {
             throw new Exception("Server returned HTTP " + connection.getResponseCode());
         }
 
-        try (InputStream input = new BufferedInputStream(connection.getInputStream());
-             FileOutputStream output = new FileOutputStream(destination)) {
+        InputStream input = new BufferedInputStream(connection.getInputStream());
+        FileOutputStream output = new FileOutputStream(destination);
 
-            byte[] buffer = new byte[4096];
-            int count;
-            while ((count = input.read(buffer)) != -1) {
-                output.write(buffer, 0, count);
-            }
-            output.flush();
-        } finally {
-            connection.disconnect();
+        byte[] buffer = new byte[4096];
+        int count;
+        while ((count = input.read(buffer)) != -1) {
+            output.write(buffer, 0, count);
         }
+
+        output.flush();
+        output.close();
+        input.close();
+        connection.disconnect();
 
         Log.d(TAG, "Downloaded to: " + destination.getAbsolutePath());
     }
 
     private static void unzip(String zipFilePath, String targetDirectoryPath) throws Exception {
-        try (ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFilePath)))) {
-            ZipEntry ze;
-            while ((ze = zis.getNextEntry()) != null) {
-                File file = new File(targetDirectoryPath, ze.getName());
+        ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFilePath)));
+        ZipEntry ze;
 
-                if (ze.isDirectory()) {
-                    if (!file.exists() && !file.mkdirs()) {
-                        throw new Exception("Failed to create directory: " + file.getAbsolutePath());
-                    }
-                } else {
-                    File parent = file.getParentFile();
-                    if (!parent.exists() && !parent.mkdirs()) {
-                        throw new Exception("Failed to create directory: " + parent.getAbsolutePath());
-                    }
+        while ((ze = zis.getNextEntry()) != null) {
+            File file = new File(targetDirectoryPath, ze.getName());
 
-                    try (FileOutputStream fout = new FileOutputStream(file)) {
-                        byte[] buffer = new byte[4096];
-                        int count;
-                        while ((count = zis.read(buffer)) != -1) {
-                            fout.write(buffer, 0, count);
-                        }
-                    }
+            if (ze.isDirectory()) {
+                file.mkdirs();
+            } else {
+                File parent = file.getParentFile();
+                if (!parent.exists()) parent.mkdirs();
+
+                FileOutputStream fout = new FileOutputStream(file);
+                byte[] buffer = new byte[4096];
+                int count;
+                while ((count = zis.read(buffer)) != -1) {
+                    fout.write(buffer, 0, count);
                 }
-                zis.closeEntry();
+                fout.close();
             }
+
+            zis.closeEntry();
         }
 
+        zis.close();
         Log.d(TAG, "Unzipped to: " + targetDirectoryPath);
     }
-                   }
+                }
