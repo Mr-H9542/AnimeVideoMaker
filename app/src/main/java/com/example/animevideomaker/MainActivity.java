@@ -23,20 +23,13 @@ import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.ObjectOutputStream;
-import java.io.Serializable;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtSession;
@@ -45,14 +38,6 @@ public class MainActivity extends Activity {
 
     private static final String TAG = "MainActivity";
     private static final int PERMISSION_REQUEST_CODE = 1001;
-    private static final int BACKGROUND_WIDTH = 720;
-    private static final int BACKGROUND_HEIGHT = 1280;
-    private static final int MAX_ZIP_SIZE = 1024 * 1024 * 500; // 500 MB max
-    private static final int MAX_RETRIES = 3;
-    private static final String DRIVE_FILE_ID = "1YNmra-wLt-VFdTfcg2BRyc9aBXQbNL8G";
-    private static final String MODEL_URL = "https://drive.google.com/uc?export=download&id=" + DRIVE_FILE_ID;
-    private static final String ZIP_NAME = "models.zip";
-    private static final String MODEL_DIR = "ai_model";
     private static final int MAX_PROMPT_LENGTH = 100;
 
     private TextView welcomeText;
@@ -66,34 +51,20 @@ public class MainActivity extends Activity {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
+    private static final List<String> VALID_COLORS = Arrays.asList("red", "blue", "green", "yellow");
+    private static final List<String> VALID_TYPES = Arrays.asList("star", "ball", "cat");
+    private static final List<String> VALID_ACTIONS = Arrays.asList("bounce", "rotate", "walk", "jump", "idle");
+    private static final List<String> VALID_BACKGROUNDS = Arrays.asList("white", "red", "blue", "gray", "black");
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
         initViews();
         setupLoadingDialog();
         setupPromptValidation();
-
-        executor.execute(() -> {
-            try {
-                ensureModelsDownloaded();
-                mainHandler.post(this::checkPermissionsAndLoadModels);
-            } catch (Exception e) {
-                Log.e(TAG, "Error during model download/init", e);
-                mainHandler.post(() -> showError("Error downloading models: " + e.getMessage()));
-            }
-        });
-
-        btnRender.setOnClickListener(v -> {
-            btnRender.setEnabled(false);
-            showLoadingDialog("Processing request...");
-            if (hasRequiredPermissions()) {
-                processRenderRequest();
-            } else {
-                requestNecessaryPermissions();
-            }
-        });
+        initPermissions();
+        btnRender.setOnClickListener(v -> onRenderClicked());
     }
 
     private void initViews() {
@@ -117,22 +88,168 @@ public class MainActivity extends Activity {
     private void setupPromptValidation() {
         promptInput.setHint("E.g., 'red star bounce on blue background for 5 seconds'");
         promptInput.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {}
-            @Override
-            public void afterTextChanged(Editable s) {
-                String input = s.toString().trim().replace("\n", " ");
-                AnimationRequest req = AITextParser.parse(input);
-                if (input.isEmpty() || input.length() > MAX_PROMPT_LENGTH || req == null ||
-                        req.characterType == null || req.characterColor == null || req.action == null) {
-                    promptInput.setError("Invalid prompt. Try: 'color type action on background for duration seconds'");
-                    btnRender.setEnabled(false);
-                } else {
-                    promptInput.setError(null);
-                    btnRender.setEnabled(textEncoderSession != null);
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(Editable s) {
+                validatePrompt(s.toString());
+            }
+        });
+    }
+
+    private void validatePrompt(String input) {
+        String trimmed = input.trim().replace("\n", " ");
+        AnimationRequest req = AITextParser.parse(trimmed);
+
+        boolean isValid = !trimmed.isEmpty() && trimmed.length() <= MAX_PROMPT_LENGTH &&
+                req != null && req.characterType != null && req.characterColor != null && req.action != null;
+
+        if (isValid) {
+            promptInput.setError(null);
+            btnRender.setEnabled(textEncoderSession != null);
+        } else {
+            promptInput.setError("Invalid prompt. Try: 'color type action on background for duration seconds'");
+            btnRender.setEnabled(false);
+        }
+    }
+
+    private void initPermissions() {
+        executor.execute(() -> {
+            try {
+                loadModelsIfNeeded();
+                mainHandler.post(() -> {
+                    if (hasRequiredPermissions()) {
+                        loadOnnxModelsAsync();
+                    } else {
+                        requestPermissions();
+                    }
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "Initialization failed", e);
+                mainHandler.post(() -> showError("Initialization failed: " + e.getMessage()));
+            }
+        });
+    }
+
+    private boolean hasRequiredPermissions() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void requestPermissions() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+                new AlertDialog.Builder(this)
+                        .setTitle("Storage Permission Needed")
+                        .setMessage("We need storage access to load AI models and save animations.")
+                        .setPositiveButton("Grant", (dialog, which) -> requestStoragePermissions())
+                        .setNegativeButton("Deny", (dialog, which) -> showError("Permission denied. Cannot proceed."))
+                        .show();
+            } else {
+                requestStoragePermissions();
+            }
+        } else {
+            loadOnnxModelsAsync();
+        }
+    }
+
+    private void requestStoragePermissions() {
+        ActivityCompat.requestPermissions(this,
+                new String[]{Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                PERMISSION_REQUEST_CODE);
+    }
+
+    private void loadModelsIfNeeded() throws Exception {
+        File modelDir = new File(getFilesDir(), Constants.MODEL_DIR);
+        if (modelDir.exists() && modelDir.isDirectory() && modelDir.listFiles().length > 0) {
+            Log.d(TAG, "Models already present.");
+            return;
+        }
+
+        mainHandler.post(() -> showLoadingDialog("Downloading AI models..."));
+        File zipFile = new File(getFilesDir(), Constants.ZIP_NAME);
+        ModelDownloader.downloadFromGoogleDrive(Constants.DRIVE_FILE_ID, zipFile);
+        mainHandler.post(() -> showLoadingDialog("Extracting models..."));
+        ModelDownloader.unzip(zipFile.getAbsolutePath(), modelDir.getAbsolutePath());
+        zipFile.delete();
+    }
+
+    private void loadOnnxModelsAsync() {
+        executor.execute(() -> {
+            try {
+                ortEnv = OrtEnvironment.getEnvironment();
+                File textEncoderFile = new File(getFilesDir(), Constants.MODEL_DIR + "/animagine-xl/text_encoder/model.onnx");
+
+                if (!textEncoderFile.exists()) {
+                    throw new RuntimeException("ONNX model not found: " + textEncoderFile.getAbsolutePath());
                 }
+
+                textEncoderSession = OnnxUtils.loadModelFromFile(ortEnv, textEncoderFile.getAbsolutePath());
+
+                mainHandler.post(() -> {
+                    welcomeText.setText("AI models loaded successfully.");
+                    btnRender.setEnabled(promptInput.getError() == null && !promptInput.getText().toString().trim().isEmpty());
+                    hideLoadingDialog();
+                });
+
+            } catch (Exception e) {
+                Log.e(TAG, "Model load failed", e);
+                mainHandler.post(() -> showError("AI model loading failed: " + e.getMessage()));
+            }
+        });
+    }
+
+    private void onRenderClicked() {
+        btnRender.setEnabled(false);
+        showLoadingDialog("Processing your prompt...");
+
+        if (!hasRequiredPermissions()) {
+            requestPermissions();
+            return;
+        }
+
+        processRenderRequest();
+    }
+
+    private void processRenderRequest() {
+        executor.execute(() -> {
+            String input = promptInput.getText().toString().trim().replace("\n", " ");
+            AnimationRequest req = AITextParser.parse(input);
+
+            if (req == null || input.isEmpty() || input.length() > MAX_PROMPT_LENGTH) {
+                mainHandler.post(() -> showError("Invalid or incomplete prompt."));
+                return;
+            }
+
+            if (!VALID_COLORS.contains(req.characterColor) ||
+                !VALID_TYPES.contains(req.characterType) ||
+                !VALID_ACTIONS.contains(req.action) ||
+                !VALID_BACKGROUNDS.contains(req.background.toLowerCase())) {
+                mainHandler.post(() -> showError("Unsupported values in prompt. Please follow the examples."));
+                return;
+            }
+
+            try {
+                Scene scene = new Scene();
+                scene.configureFromRequest(req);
+
+                File sceneFile = new File(getCacheDir(), "scene_" + System.currentTimeMillis() + ".ser");
+                try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(sceneFile))) {
+                    oos.writeObject(scene);
+                }
+
+                Intent previewIntent = new Intent(MainActivity.this, CharacterPreviewActivity.class);
+                previewIntent.putExtra("scene_file_path", sceneFile.getAbsolutePath());
+
+                mainHandler.post(() -> {
+                    welcomeText.setText("Rendering scene...");
+                    hideLoadingDialog();
+                    btnRender.setEnabled(true);
+                    startActivity(previewIntent);
+                });
+
+            } catch (Exception e) {
+                Log.e(TAG, "Scene rendering failed", e);
+                mainHandler.post(() -> showError("Scene generation failed: " + e.getMessage()));
             }
         });
     }
@@ -150,274 +267,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    private boolean hasRequiredPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            return true;
-        }
-        return ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                == PackageManager.PERMISSION_GRANTED;
-    }
-
-    private void requestNecessaryPermissions() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
-                new AlertDialog.Builder(this)
-                        .setTitle("Storage Permission Needed")
-                        .setMessage("This app needs storage access to save and load AI models and videos.")
-                        .setPositiveButton("Grant", (dialog, which) -> ActivityCompat.requestPermissions(
-                                MainActivity.this,
-                                new String[]{Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE},
-                                PERMISSION_REQUEST_CODE))
-                        .setNegativeButton("Deny", (dialog, which) -> showError("Permission denied. Cannot proceed without storage access."))
-                        .show();
-            } else {
-                ActivityCompat.requestPermissions(this,
-                        new String[]{Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE},
-                        PERMISSION_REQUEST_CODE);
-            }
-        } else {
-            loadOnnxModelsAsync();
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            boolean allGranted = grantResults.length > 0;
-            for (int result : grantResults) {
-                if (result != PackageManager.PERMISSION_GRANTED) {
-                    allGranted = false;
-                    break;
-                }
-            }
-            if (allGranted) {
-                loadOnnxModelsAsync();
-            } else {
-                showError("Permission denied. Cannot render without storage access.");
-            }
-        }
-    }
-
-    private void loadOnnxModelsAsync() {
-        executor.execute(() -> {
-            try {
-                ortEnv = OrtEnvironment.getEnvironment();
-                File modelDir = new File(getFilesDir(), MODEL_DIR);
-                File textEncoderFile = new File(modelDir, "animagine-xl/text_encoder/model.onnx");
-
-                if (!textEncoderFile.exists()) {
-                    throw new RuntimeException("Model file not found: " + textEncoderFile.getAbsolutePath());
-                }
-
-                textEncoderSession = OnnxUtils.loadModelFromFile(ortEnv, textEncoderFile.getAbsolutePath());
-                mainHandler.post(() -> {
-                    welcomeText.setText("AI models loaded successfully.");
-                    btnRender.setEnabled(promptInput.getText() != null && !promptInput.getText().toString().trim().isEmpty() &&
-                            promptInput.getError() == null);
-                    hideLoadingDialog();
-                });
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to load ONNX model", e);
-                mainHandler.post(() -> showError("Failed to initialize AI models: " + e.getMessage()));
-            }
-        });
-    }
-
-    private void processRenderRequest() {
-        executor.execute(() -> {
-            String prompt = promptInput.getText() != null ? promptInput.getText().toString().trim().replace("\n", " ") : "";
-            if (prompt.isEmpty() || prompt.length() > MAX_PROMPT_LENGTH) {
-                mainHandler.post(() -> showError("Please enter a valid prompt (1-" + MAX_PROMPT_LENGTH + " characters)."));
-                return;
-            }
-
-            AnimationRequest req = AITextParser.parse(prompt);
-            if (req == null || req.characterType == null || req.characterColor == null || req.action == null) {
-                mainHandler.post(() -> showError("Incomplete prompt. Try: 'color type action on background for duration seconds'"));
-                return;
-            }
-
-            String characterType = req.characterType;
-            String characterColor = req.characterColor;
-            String action = req.action;
-            int duration = req.duration;
-            String bgColorName = req.background.equals("default") ? "black" : req.background.toLowerCase();
-
-            // Validate inputs
-            boolean validColor = List.of("red", "blue", "green", "yellow").contains(characterColor);
-            boolean validType = List.of("star", "ball", "cat").contains(characterType);
-            boolean validAction = List.of("bounce", "rotate", "walk", "jump", "idle").contains(action);
-            boolean validBackground = List.of("white", "red", "blue", "gray", "black").contains(bgColorName);
-
-            if (!validColor || !validType || !validAction || !validBackground) {
-                mainHandler.post(() -> showError("Invalid prompt values. Use: colors (red, blue, green, yellow), types (star, ball, cat), actions (bounce, rotate, walk, jump, idle), backgrounds (white, red, blue, gray, black)."));
-                return;
-            }
-
-            Scene scene = new Scene();
-            scene.configureFromRequest(req);
-
-            // Save Scene to file to pass via Intent (avoid SceneHolder)
-            File sceneFile = new File(getCacheDir(), "scene_" + System.currentTimeMillis() + ".ser");
-            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(sceneFile))) {
-                oos.writeObject(scene);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to serialize Scene", e);
-                mainHandler.post(() -> showError("Failed to prepare scene: " + e.getMessage()));
-                return;
-            }
-
-            Intent intent = new Intent(MainActivity.this, CharacterPreviewActivity.class);
-            intent.putExtra("scene_file_path", sceneFile.getAbsolutePath());
-
-            mainHandler.post(() -> {
-                welcomeText.setText("Rendering: " + req.toString());
-                hideLoadingDialog();
-                btnRender.setEnabled(true);
-                startActivity(intent);
-            });
-        });
-    }
-
-    private void ensureModelsDownloaded() throws Exception {
-        File modelDir = new File(getFilesDir(), MODEL_DIR);
-        if (modelDir.exists() && modelDir.isDirectory() && modelDir.listFiles().length > 0) {
-            Log.d(TAG, "Model files already present.");
-            return;
-        }
-
-        mainHandler.post(() -> showLoadingDialog("Downloading AI models..."));
-        File zipFile = new File(getFilesDir(), ZIP_NAME);
-        downloadFileFromGoogleDrive(DRIVE_FILE_ID, zipFile);
-
-        mainHandler.post(() -> showLoadingDialog("Extracting AI models..."));
-        unzip(zipFile.getAbsolutePath(), modelDir.getAbsolutePath());
-
-        if (!zipFile.delete()) {
-            Log.w(TAG, "Could not delete temporary zip file.");
-        }
-        Log.d(TAG, "Models downloaded and extracted.");
-    }
-
-    private void downloadFileFromGoogleDrive(String fileId, File destination) throws Exception {
-        String baseUrl = "https://drive.google.com/uc?export=download";
-        int attempt = 0;
-
-        while (attempt < MAX_RETRIES) {
-            try {
-                URL url = new URL(baseUrl + "&id=" + fileId);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setInstanceFollowRedirects(false);
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-                conn.connect();
-
-                String confirmToken = getConfirmToken(conn);
-                InputStream inputStream;
-
-                if (confirmToken != null) {
-                    String downloadUrl = baseUrl + "&confirm=" + confirmToken + "&id=" + fileId;
-                    URL confirmedUrl = new URL(downloadUrl);
-                    HttpURLConnection downloadConn = (HttpURLConnection) confirmedUrl.openConnection();
-                    downloadConn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-                    downloadConn.connect();
-                    inputStream = downloadConn.getInputStream();
-                } else {
-                    inputStream = conn.getInputStream();
-                }
-
-                try (FileOutputStream output = new FileOutputStream(destination)) {
-                    byte[] buffer = new byte[4096];
-                    int bytesRead;
-                    long totalBytes = 0;
-                    while ((bytesRead = inputStream.read(buffer)) != -1) {
-                        totalBytes += bytesRead;
-                        if (totalBytes > MAX_ZIP_SIZE) {
-                            throw new SecurityException("ZIP file exceeds maximum size limit.");
-                        }
-                        output.write(buffer, 0, bytesRead);
-                    }
-                } finally {
-                    inputStream.close();
-                }
-                Log.d(TAG, "Downloaded ZIP file size: " + destination.length() + " bytes");
-                return;
-            } catch (Exception e) {
-                attempt++;
-                if (attempt >= MAX_RETRIES) {
-                    throw new Exception("Failed to download file after " + MAX_RETRIES + " attempts: " + e.getMessage(), e);
-                }
-                Thread.sleep(1000 * attempt);
-            }
-        }
-    }
-
-    private String getConfirmToken(HttpURLConnection conn) throws Exception {
-        Map<String, List<String>> headers = conn.getHeaderFields();
-        List<String> cookies = headers.get("Set-Cookie");
-        if (cookies != null) {
-            for (String cookie : cookies) {
-                if (cookie.contains("download_warning")) {
-                    String[] parts = cookie.split(";");
-                    for (String part : parts) {
-                        if (part.startsWith("download_warning")) {
-                            return part.split("=")[1].trim();
-                        }
-                    }
-                }
-            }
-        }
-
-        try (InputStream is = conn.getInputStream();
-             BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.contains("confirm=")) {
-                    int start = line.indexOf("confirm=") + 8;
-                    int end = line.indexOf("&", start);
-                    if (end == -1) end = line.indexOf("\"", start);
-                    if (end != -1) {
-                        return line.substring(start, end);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to parse confirmation token from HTML", e);
-        }
-        return null;
-    }
-
-    private void unzip(String zipFilePath, String destDir) throws Exception {
-        File destDirFile = new File(destDir);
-        if (!destDirFile.exists()) destDirFile.mkdirs();
-        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipFilePath))) {
-            ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
-                File newFile = new File(destDirFile, entry.getName());
-                if (!newFile.getCanonicalPath().startsWith(destDirFile.getCanonicalPath())) {
-                    throw new SecurityException("Invalid ZIP entry: " + entry.getName());
-                }
-                if (entry.isDirectory()) {
-                    newFile.mkdirs();
-                } else {
-                    try (FileOutputStream fos = new FileOutputStream(newFile)) {
-                        byte[] buffer = new byte[4096];
-                        int len;
-                        long totalBytes = 0;
-                        while ((len = zis.read(buffer)) > 0) {
-                            totalBytes += len;
-                            if (totalBytes > MAX_ZIP_SIZE) {
-                                throw new SecurityException("ZIP entry exceeds maximum size limit.");
-                            }
-                            fos.write(buffer, 0, len);
-                        }
-                    }
-                }
-                zis.closeEntry();
-            }
-        }
-    }
-
     private void showError(String message) {
         welcomeText.setText(message);
         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
@@ -429,20 +278,25 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (textEncoderSession != null) {
-            try {
-                textEncoderSession.close();
-            } catch (Exception e) {
-                Log.e(TAG, "Error closing OrtSession", e);
-            }
-        }
-        if (ortEnv != null) {
-            try {
-                ortEnv.close();
-            } catch (Exception e) {
-                Log.e(TAG, "Error closing OrtEnvironment", e);
-            }
+        try {
+            if (textEncoderSession != null) textEncoderSession.close();
+            if (ortEnv != null) ortEnv.close();
+        } catch (Exception e) {
+            Log.e(TAG, "Error closing ONNX resources", e);
         }
         executor.shutdownNow();
     }
+
+    @Override
+    public void onRequestPermissionsResult(int code, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(code, permissions, grantResults);
+        if (code == PERMISSION_REQUEST_CODE) {
+            boolean granted = Arrays.stream(grantResults).allMatch(r -> r == PackageManager.PERMISSION_GRANTED);
+            if (granted) {
+                loadOnnxModelsAsync();
+            } else {
+                showError("Storage permission denied. Cannot continue.");
             }
+        }
+    }
+    }
