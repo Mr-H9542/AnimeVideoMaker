@@ -27,8 +27,7 @@ public class FrameGenerator {
 
             for (Character character : characters) {
                 try {
-                    // Try to load asset
-                    String assetPath = character.getAssetPath(character.getAction(), 64);
+                    String assetPath = character.getAssetPath(64); // FIXED
                     Bitmap characterBitmap = BitmapFactory.decodeStream(context.getAssets().open(assetPath));
                     float x = character.getPosition() != null ? character.getPosition().x : 100;
                     float y = character.getPosition() != null ? character.getPosition().y : 100;
@@ -36,7 +35,6 @@ public class FrameGenerator {
                     characterBitmap.recycle();
                 } catch (Exception e) {
                     Log.w(TAG, "Failed to load asset for " + character.getType() + ", using fallback", e);
-                    // Fallback to drawing a colored shape
                     Paint paint = new Paint();
                     paint.setColor(switch (character.getColor().toLowerCase()) {
                         case "red" -> 0xFFFF0000;
@@ -57,6 +55,7 @@ public class FrameGenerator {
 
             frames.add(new VideoFrame(frameBitmap, i * 1000 / fps));
         }
+
         return frames;
     }
-                        }
+}
