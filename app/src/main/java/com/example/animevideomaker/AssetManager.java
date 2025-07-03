@@ -1,95 +1,130 @@
 package com.example.animevideomaker;
 
 import android.content.Context;
-import android.os.Handler;
-import android.os.Looper;
-import android.widget.Toast;
+import android.os.AsyncTask;
+import android.os.Environment;
+import android.util.Log;
 
-import java.io.*;
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-public class AssetManager {
+/**
+ * Downloads and extracts assets.zip from GitHub Releases if not already present.
+ */
+public class AssetDownloader {
 
-    private static final String ZIP_URL = "https://github.com/YourOrg/AnimeVideoMaker/releases/download/v1.0/assets.zip";
-    private static final String ZIP_FILENAME = "model_assets.zip";
-    private static final String CHECK_FILE = "onnx_model/text_encoder/text_encoder_model.onnx";
+    private static final String TAG = "AssetDownloader";
+    private static final String ZIP_URL = "https://github.com/Mr-H9542/AnimeVideoMaker/releases/download/v1.0/assets.zip";
+    private static final String ZIP_NAME = "assets.zip";
+    private static final String TARGET_FOLDER = "onnx_model";
 
-    public interface AssetCallback {
-        void onAssetsReady();
-        void onError(String error);
+    public interface OnAssetsReadyCallback {
+        void onReady();
+        void onFailed(Exception e);
     }
 
-    public static void ensureAssetsReady(Context context, AssetCallback callback) {
-        File modelFile = new File(context.getFilesDir(), CHECK_FILE);
+    public static void ensureAssetsAvailable(Context context, OnAssetsReadyCallback callback) {
+        File targetDir = new File(context.getFilesDir(), TARGET_FOLDER);
 
-        if (modelFile.exists()) {
-            callback.onAssetsReady();
+        if (targetDir.exists() && targetDir.isDirectory() && targetDir.list().length > 0) {
+            Log.d(TAG, "Assets already available.");
+            callback.onReady();
             return;
         }
 
-        new Thread(() -> {
-            try {
-                // 1. Download ZIP
-                File zipFile = new File(context.getFilesDir(), ZIP_FILENAME);
-                URL url = new URL(ZIP_URL);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.connect();
-
-                try (InputStream in = conn.getInputStream();
-                     FileOutputStream out = new FileOutputStream(zipFile)) {
-                    byte[] buffer = new byte[4096];
-                    int len;
-                    while ((len = in.read(buffer)) > 0) {
-                        out.write(buffer, 0, len);
-                    }
-                }
-
-                // 2. Extract
-                unzip(zipFile.getAbsolutePath(), context.getFilesDir().getAbsolutePath());
-
-                // 3. Confirm result
-                File check = new File(context.getFilesDir(), CHECK_FILE);
-                if (check.exists()) {
-                    runOnMain(() -> callback.onAssetsReady());
-                } else {
-                    runOnMain(() -> callback.onError("Model file missing after unzip"));
-                }
-
-            } catch (Exception e) {
-                e.printStackTrace();
-                runOnMain(() -> callback.onError("Asset download failed: " + e.getMessage()));
-            }
-        }).start();
+        new DownloadAndExtractTask(context, callback).execute();
     }
 
-    private static void unzip(String zipPath, String destDir) throws IOException {
-        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipPath))) {
-            ZipEntry entry;
-            byte[] buffer = new byte[1024];
+    private static class DownloadAndExtractTask extends AsyncTask<Void, Void, Boolean> {
 
-            while ((entry = zis.getNextEntry()) != null) {
-                File newFile = new File(destDir, entry.getName());
-                if (entry.isDirectory()) {
-                    newFile.mkdirs();
-                    continue;
-                } else {
-                    new File(newFile.getParent()).mkdirs();
-                }
+        private final Context context;
+        private final OnAssetsReadyCallback callback;
+        private Exception failure;
 
-                try (FileOutputStream fos = new FileOutputStream(newFile)) {
-                    int len;
-                    while ((len = zis.read(buffer)) > 0) {
-                        fos.write(buffer, 0, len);
-                    }
-                }
+        DownloadAndExtractTask(Context context, OnAssetsReadyCallback callback) {
+            this.context = context.getApplicationContext();
+            this.callback = callback;
+        }
+
+        @Override
+        protected Boolean doInBackground(Void... voids) {
+            try {
+                File zipFile = new File(context.getCacheDir(), ZIP_NAME);
+                downloadZipFile(ZIP_URL, zipFile);
+                unzip(zipFile.getAbsolutePath(), context.getFilesDir().getAbsolutePath());
+                return true;
+            } catch (Exception e) {
+                e.printStackTrace();
+                failure = e;
+                return false;
+            }
+        }
+
+        @Override
+        protected void onPostExecute(Boolean success) {
+            if (success) {
+                callback.onReady();
+            } else {
+                callback.onFailed(failure);
             }
         }
     }
 
-    private static void runOnMain(Runnable r) {
-        new Handler(Looper.getMainLooper()).post(r);
+    private static void downloadZipFile(String zipUrl, File destination) throws Exception {
+        Log.d(TAG, "Downloading: " + zipUrl);
+        HttpURLConnection connection = (HttpURLConnection) new URL(zipUrl).openConnection();
+        connection.connect();
+
+        if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
+            throw new Exception("Server returned HTTP " + connection.getResponseCode());
+        }
+
+        InputStream input = new BufferedInputStream(connection.getInputStream());
+        FileOutputStream output = new FileOutputStream(destination);
+
+        byte[] buffer = new byte[4096];
+        int count;
+        while ((count = input.read(buffer)) != -1) {
+            output.write(buffer, 0, count);
+        }
+
+        output.flush();
+        output.close();
+        input.close();
+        connection.disconnect();
+        Log.d(TAG, "Downloaded to: " + destination.getAbsolutePath());
     }
-                            }
+
+    private static void unzip(String zipFilePath, String targetDirectoryPath) throws Exception {
+        ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFilePath)));
+        ZipEntry ze;
+
+        while ((ze = zis.getNextEntry()) != null) {
+            File file = new File(targetDirectoryPath, ze.getName());
+
+            if (ze.isDirectory()) {
+                file.mkdirs();
+            } else {
+                File parent = file.getParentFile();
+                if (!parent.exists()) parent.mkdirs();
+
+                FileOutputStream fout = new FileOutputStream(file);
+                byte[] buffer = new byte[4096];
+                int count;
+                while ((count = zis.read(buffer)) != -1) {
+                    fout.write(buffer, 0, count);
+                }
+                fout.close();
+            }
+            zis.closeEntry();
+        }
+        zis.close();
+        Log.d(TAG, "Unzipped to: " + targetDirectoryPath);
+    }
+                                }
