@@ -5,12 +5,12 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -28,6 +28,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.List;
@@ -43,7 +45,7 @@ public class MainActivity extends Activity {
 
     private static final String TAG = "MainActivity";
     private static final int PERMISSION_REQUEST_CODE = 1001;
-    private static final int BACKGROUND_WIDTH = 720; // Aligned with Scene
+    private static final int BACKGROUND_WIDTH = 720;
     private static final int BACKGROUND_HEIGHT = 1280;
     private static final int MAX_ZIP_SIZE = 1024 * 1024 * 500; // 500 MB max
     private static final int MAX_RETRIES = 3;
@@ -71,7 +73,7 @@ public class MainActivity extends Activity {
 
         initViews();
         setupLoadingDialog();
-        promptInput.setHint("E.g., 'red star bounce on blue background for 5 seconds'");
+        setupPromptValidation();
 
         executor.execute(() -> {
             try {
@@ -110,6 +112,29 @@ public class MainActivity extends Activity {
                 .setView(R.layout.dialog_loading)
                 .setCancelable(false)
                 .create();
+    }
+
+    private void setupPromptValidation() {
+        promptInput.setHint("E.g., 'red star bounce on blue background for 5 seconds'");
+        promptInput.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override
+            public void afterTextChanged(Editable s) {
+                String input = s.toString().trim().replace("\n", " ");
+                AnimationRequest req = AITextParser.parse(input);
+                if (input.isEmpty() || input.length() > MAX_PROMPT_LENGTH || req == null ||
+                        req.characterType == null || req.characterColor == null || req.action == null) {
+                    promptInput.setError("Invalid prompt. Try: 'color type action on background for duration seconds'");
+                    btnRender.setEnabled(false);
+                } else {
+                    promptInput.setError(null);
+                    btnRender.setEnabled(textEncoderSession != null);
+                }
+            }
+        });
     }
 
     private void showLoadingDialog(String message) {
@@ -188,7 +213,8 @@ public class MainActivity extends Activity {
                 textEncoderSession = OnnxUtils.loadModelFromFile(ortEnv, textEncoderFile.getAbsolutePath());
                 mainHandler.post(() -> {
                     welcomeText.setText("AI models loaded successfully.");
-                    btnRender.setEnabled(true);
+                    btnRender.setEnabled(promptInput.getText() != null && !promptInput.getText().toString().trim().isEmpty() &&
+                            promptInput.getError() == null);
                     hideLoadingDialog();
                 });
             } catch (Exception e) {
@@ -200,7 +226,7 @@ public class MainActivity extends Activity {
 
     private void processRenderRequest() {
         executor.execute(() -> {
-            String prompt = promptInput.getText() != null ? promptInput.getText().toString().trim() : "";
+            String prompt = promptInput.getText() != null ? promptInput.getText().toString().trim().replace("\n", " ") : "";
             if (prompt.isEmpty() || prompt.length() > MAX_PROMPT_LENGTH) {
                 mainHandler.post(() -> showError("Please enter a valid prompt (1-" + MAX_PROMPT_LENGTH + " characters)."));
                 return;
@@ -229,14 +255,21 @@ public class MainActivity extends Activity {
                 return;
             }
 
-            Character character = new Character("char_" + System.currentTimeMillis(), characterType, characterColor, action, new PointF(100, 100), true);
             Scene scene = new Scene();
-            scene.configureFromRequest(req); // Uses Scene's configureFromRequest to set background and character
+            scene.configureFromRequest(req);
 
-            // Pass Scene via Intent instead of SceneHolder
+            // Save Scene to file to pass via Intent (avoid SceneHolder)
+            File sceneFile = new File(getCacheDir(), "scene_" + System.currentTimeMillis() + ".ser");
+            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(sceneFile))) {
+                oos.writeObject(scene);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to serialize Scene", e);
+                mainHandler.post(() -> showError("Failed to prepare scene: " + e.getMessage()));
+                return;
+            }
+
             Intent intent = new Intent(MainActivity.this, CharacterPreviewActivity.class);
-            // Note: Scene is not Serializable by default. Use a workaround or ensure it's handled in CharacterPreviewActivity
-            SceneHolder.scene = scene; // Temporary use of SceneHolder until serialization is resolved
+            intent.putExtra("scene_file_path", sceneFile.getAbsolutePath());
 
             mainHandler.post(() -> {
                 welcomeText.setText("Rendering: " + req.toString());
@@ -388,7 +421,7 @@ public class MainActivity extends Activity {
     private void showError(String message) {
         welcomeText.setText(message);
         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-        btnRender.setEnabled(true);
+        btnRender.setEnabled(promptInput.getError() == null);
         progressBar.setVisibility(View.GONE);
         hideLoadingDialog();
     }
@@ -412,4 +445,4 @@ public class MainActivity extends Activity {
         }
         executor.shutdownNow();
     }
-                    }
+            }
