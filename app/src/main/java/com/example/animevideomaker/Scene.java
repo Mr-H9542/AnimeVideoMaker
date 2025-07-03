@@ -1,8 +1,12 @@
 package com.example.animevideomaker;
 
+import android.app.Dialog;
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.os.AsyncTask;
+import android.view.Window;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -71,4 +75,30 @@ public class Scene implements Serializable {
         setCharacter(c);
         setDuration(req.duration);
     }
+
+    public void generateFrames(Context context, Dialog loadingDialog, Runnable onComplete) {
+        new AsyncTask<Void, Void, Void>() {
+            @Override
+            protected void onPreExecute() {
+                loadingDialog.show();
+            }
+
+            @Override
+            protected Void doInBackground(Void... voids) {
+                try {
+                    // Simulate long task (e.g., generating animation frames)
+                    Thread.sleep(durationSeconds * 1000L);  // Replace with actual frame generation
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                return null;
+            }
+
+            @Override
+            protected void onPostExecute(Void unused) {
+                loadingDialog.dismiss();
+                if (onComplete != null) onComplete.run();
+            }
+        }.execute();
     }
+                       }
