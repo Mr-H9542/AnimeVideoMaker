@@ -8,6 +8,8 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -19,11 +21,15 @@ import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.List;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -39,7 +45,9 @@ public class MainActivity extends Activity {
     private static final int BACKGROUND_WIDTH = 640;
     private static final int BACKGROUND_HEIGHT = 480;
 
-    private static final String MODEL_URL = "https://drive.google.com/uc?export=download&id=1YI72jDRoZraSZjWlgKuMxNY8mFZrZm9P";
+    // Google Drive file ID for your model ZIP
+    private static final String DRIVE_FILE_ID = "1YNmra-wLt-VFdTfcg2BRyc9aBXQbNL8G";
+    private static final String MODEL_URL = "https://drive.google.com/uc?export=download&id=" + DRIVE_FILE_ID;
     private static final String ZIP_NAME = "models.zip";
     private static final String MODEL_DIR = "ai_model";
 
@@ -51,6 +59,8 @@ public class MainActivity extends Activity {
     private OrtEnvironment ortEnv;
     private OrtSession textEncoderSession;
 
+    private Handler mainHandler = new Handler(Looper.getMainLooper());
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -58,10 +68,19 @@ public class MainActivity extends Activity {
 
         initViews();
 
-        // Download and prepare models, then enable UI
+        // Start model download and load process on background thread
         new Thread(() -> {
-            ensureModelsDownloaded();
-            runOnUiThread(this::checkPermissionsAndLoadModels);
+            try {
+                ensureModelsDownloaded();
+                mainHandler.post(this::checkPermissionsAndLoadModels);
+            } catch (Exception e) {
+                Log.e(TAG, "Error during model download/init", e);
+                mainHandler.post(() -> {
+                    welcomeText.setText("Error downloading models: " + e.getMessage());
+                    btnRender.setEnabled(false);
+                    progressBar.setVisibility(View.GONE);
+                });
+            }
         }).start();
 
         btnRender.setOnClickListener(v -> {
@@ -97,8 +116,8 @@ public class MainActivity extends Activity {
     }
 
     private boolean hasRequiredPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Assume permissions granted for Android 13+
+        // Since we only save models internally, no storage permission needed for Android 10+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             return true;
         }
         return ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
@@ -106,15 +125,17 @@ public class MainActivity extends Activity {
     }
 
     private void requestNecessaryPermissions() {
-        if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
-            welcomeText.setText("Storage permission is needed to save rendered videos.");
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{
+                            Manifest.permission.READ_EXTERNAL_STORAGE,
+                            Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    },
+                    PERMISSION_REQUEST_CODE);
+        } else {
+            // No permissions needed for internal storage on Android 10+
+            loadOnnxModelsAsync();
         }
-        ActivityCompat.requestPermissions(this,
-                new String[]{
-                        Manifest.permission.READ_EXTERNAL_STORAGE,
-                        Manifest.permission.WRITE_EXTERNAL_STORAGE
-                },
-                PERMISSION_REQUEST_CODE);
     }
 
     @Override
@@ -155,13 +176,13 @@ public class MainActivity extends Activity {
 
                 textEncoderSession = OnnxUtils.loadModelFromFile(ortEnv, textEncoderFile.getAbsolutePath());
 
-                runOnUiThread(() -> {
+                mainHandler.post(() -> {
                     welcomeText.setText("AI models loaded successfully.");
                     btnRender.setEnabled(true);
                 });
             } catch (Exception e) {
                 Log.e(TAG, "Failed to load ONNX model.", e);
-                runOnUiThread(() -> {
+                mainHandler.post(() -> {
                     welcomeText.setText("Failed to initialize AI models.");
                     btnRender.setEnabled(false);
                 });
@@ -174,7 +195,7 @@ public class MainActivity extends Activity {
             String prompt = promptInput.getText() != null ? promptInput.getText().toString().trim() : "";
 
             if (prompt.isEmpty()) {
-                runOnUiThread(() -> {
+                mainHandler.post(() -> {
                     welcomeText.setText("Please enter a prompt.");
                     btnRender.setEnabled(true);
                     progressBar.setVisibility(View.GONE);
@@ -184,7 +205,7 @@ public class MainActivity extends Activity {
 
             AnimationRequest req = AITextParser.parse(prompt);
             if (req == null) {
-                runOnUiThread(() -> {
+                mainHandler.post(() -> {
                     welcomeText.setText("Failed to parse prompt. Try again.");
                     btnRender.setEnabled(true);
                     progressBar.setVisibility(View.GONE);
@@ -192,7 +213,6 @@ public class MainActivity extends Activity {
                 return;
             }
 
-            // Defaults
             String characterType = req.characterType != null ? req.characterType : "star";
             String characterColor = req.characterColor != null ? req.characterColor : "blue";
             String action = req.action != null ? req.action : "idle";
@@ -223,7 +243,7 @@ public class MainActivity extends Activity {
 
             SceneHolder.scene = scene;
 
-            runOnUiThread(() -> {
+            mainHandler.post(() -> {
                 welcomeText.setText("Rendering started...");
                 progressBar.setVisibility(View.GONE);
                 btnRender.setEnabled(true);
@@ -232,74 +252,64 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    // --- Model download & unzip ---
+    // --- Model download & unzip with Google Drive confirmation token handling ---
 
-    private void ensureModelsDownloaded() {
+    private void ensureModelsDownloaded() throws Exception {
         File modelDir = new File(getFilesDir(), MODEL_DIR);
         if (modelDir.exists() && modelDir.isDirectory() && modelDir.listFiles().length > 0) {
             Log.d(TAG, "Model files already present.");
             return;
         }
 
-        try {
-            Log.d(TAG, "Downloading model zip...");
-            File zipFile = new File(getFilesDir(), ZIP_NAME);
-            downloadFile(MODEL_URL, zipFile);
+        Log.d(TAG, "Downloading model zip...");
+        File zipFile = new File(getFilesDir(), ZIP_NAME);
+        downloadFileFromGoogleDrive(DRIVE_FILE_ID, zipFile);
 
-            Log.d(TAG, "Extracting model files...");
-            unzip(zipFile.getAbsolutePath(), modelDir.getAbsolutePath());
+        Log.d(TAG, "Extracting model files...");
+        unzip(zipFile.getAbsolutePath(), modelDir.getAbsolutePath());
 
-            zipFile.delete();
-            Log.d(TAG, "Models downloaded and extracted.");
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to download or extract models", e);
-            runOnUiThread(() -> welcomeText.setText("Error downloading models: " + e.getMessage()));
+        boolean deleted = zipFile.delete();
+        if (!deleted) {
+            Log.w(TAG, "Could not delete temporary zip file.");
         }
+
+        Log.d(TAG, "Models downloaded and extracted.");
     }
 
-    private void downloadFile(String fileURL, File destination) throws Exception {
-        URL url = new URL(fileURL);
+    /**
+     * Downloads a file from Google Drive with confirmation token handling for large files.
+     * @param fileId Google Drive file ID
+     * @param destination Local file destination
+     * @throws Exception
+     */
+    private void downloadFileFromGoogleDrive(String fileId, File destination) throws Exception {
+        String baseUrl = "https://drive.google.com/uc?export=download";
+
+        // First request to get confirmation token if needed
+        URL url = new URL(baseUrl + "&id=" + fileId);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.connect();
+        conn.setInstanceFollowRedirects(false);
 
-        if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
-            throw new RuntimeException("Server returned HTTP " + conn.getResponseCode()
-                    + " " + conn.getResponseMessage());
-        }
+        String confirmToken = null;
+        Map<String, List<String>> headers = conn.getHeaderFields();
 
-        try (InputStream input = conn.getInputStream();
-             FileOutputStream output = new FileOutputStream(destination)) {
-
-            byte[] buffer = new byte[4096];
-            int bytesRead;
-            while ((bytesRead = input.read(buffer)) != -1) {
-                output.write(buffer, 0, bytesRead);
-            }
-        }
-    }
-
-    private void unzip(String zipFilePath, String destDirectory) throws Exception {
-        File destDir = new File(destDirectory);
-        if (!destDir.exists()) destDir.mkdirs();
-
-        try (ZipInputStream zipIn = new ZipInputStream(new java.io.FileInputStream(zipFilePath))) {
-            ZipEntry entry;
-            while ((entry = zipIn.getNextEntry()) != null) {
-                File outFile = new File(destDir, entry.getName());
-                if (entry.isDirectory()) {
-                    outFile.mkdirs();
-                } else {
-                    outFile.getParentFile().mkdirs();
-                    try (FileOutputStream fos = new FileOutputStream(outFile)) {
-                        byte[] buffer = new byte[4096];
-                        int len;
-                        while ((len = zipIn.read(buffer)) != -1) {
-                            fos.write(buffer, 0, len);
-                        }
-                    }
+        // Look for "Set-Cookie" headers containing confirmation token
+        List<String> cookies = headers.get("Set-Cookie");
+        if (cookies != null) {
+            for (String cookie : cookies) {
+                if (cookie.contains("download_warning")) {
+                    int start = cookie.indexOf("download_warning");
+                    int end = cookie.indexOf(";", start);
+                    confirmToken = cookie.substring(start, end);
+                    break;
                 }
-                zipIn.closeEntry();
             }
         }
-    }
-                                               }
+
+        // If confirmToken not found in cookies, try to parse from response body
+        if (confirmToken == null) {
+            InputStream is = conn.getInputStream();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(is));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line
