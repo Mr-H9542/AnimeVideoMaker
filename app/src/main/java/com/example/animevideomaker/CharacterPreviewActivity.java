@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.media.MediaScannerConnection;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -13,12 +14,14 @@ import android.widget.LinearLayout;
 import android.widget.Toast;
 
 import java.io.File;
+import java.io.ObjectInputStream;
+import java.io.FileInputStream;
 import java.util.List;
 
 public class CharacterPreviewActivity extends Activity {
 
     private static final int FRAME_DELAY_MS = 100; // 10 FPS
-    private final Handler handler = new Handler();
+    private final Handler handler = new Handler(Looper.getMainLooper());
 
     private ImageView characterView;
     private List<VideoFrame> frames;
@@ -44,7 +47,21 @@ public class CharacterPreviewActivity extends Activity {
         super.onCreate(savedInstanceState);
         LinearLayout rootLayout = createLayout();
 
-        Scene scene = SceneHolder.scene;
+        String sceneFilePath = getIntent().getStringExtra("scene_file_path");
+        Scene scene = null;
+        if (sceneFilePath != null) {
+            try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(sceneFilePath))) {
+                scene = (Scene) ois.readObject();
+                // Restore transient background
+                scene.setBackgroundColor(scene.getBackground() == null ? "black" : scene.getBackground().toString());
+                new File(sceneFilePath).delete(); // Clean up
+            } catch (Exception e) {
+                showToast("Failed to load scene: " + e.getMessage());
+                finish();
+                return;
+            }
+        }
+
         if (scene == null) {
             showToast("No scene provided!");
             finish();
@@ -100,8 +117,7 @@ public class CharacterPreviewActivity extends Activity {
                     MediaScannerConnection.scanFile(this,
                             new String[]{outputFile.getAbsolutePath()},
                             new String[]{"video/mp4"}, null);
-
-                    runOnUiThread(() -> showToast("Video saved:\n" + outputFile.getName()));
+                    runOnUiThread(() -> showToast("Video saved: " + outputFile.getName()));
                 } else {
                     runOnUiThread(() -> showToast("Failed to save video"));
                 }
@@ -112,7 +128,7 @@ public class CharacterPreviewActivity extends Activity {
     }
 
     private void showToast(String message) {
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+        runOnUiThread(() -> Toast.makeText(this, message, Toast.LENGTH_LONG).show());
     }
 
     @Override
@@ -130,4 +146,4 @@ public class CharacterPreviewActivity extends Activity {
             frames.clear();
         }
     }
-}
+            }
