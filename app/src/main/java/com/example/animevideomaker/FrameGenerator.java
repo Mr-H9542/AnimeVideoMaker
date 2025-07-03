@@ -2,62 +2,61 @@ package com.example.animevideomaker;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.util.Log;
 
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Generates animation frames for a given Scene.
- */
 public class FrameGenerator {
-    private static final int FPS = 10;
+    private static final String TAG = "FrameGenerator";
 
-    /**
-     * Generates a list of VideoFrame for the Scene animation.
-     *
-     * @param ctx   Application context (if needed for rendering)
-     * @param scene The animation Scene to render
-     * @return List of generated VideoFrames
-     * @throws IllegalArgumentException if scene or its background or characters are missing
-     */
-    public static List<VideoFrame> generate(Context ctx, Scene scene) {
-        if (scene == null) {
-            throw new IllegalArgumentException("Scene cannot be null");
-        }
-        Bitmap bg = scene.getBackground();
-        if (bg == null) {
-            throw new IllegalArgumentException("Scene background cannot be null");
-        }
-        List<Character> chars = scene.getCharactersByDepth();
-        if (chars == null || chars.isEmpty()) {
-            throw new IllegalArgumentException("Scene must have at least one Character");
-        }
-
+    public static List<VideoFrame> generate(Context context, Scene scene) throws Exception {
         List<VideoFrame> frames = new ArrayList<>();
-        CharacterRenderer renderer = new CharacterRenderer();  // Assuming default constructor
-        Character mainChar = chars.get(0);
+        int fps = 10;
+        int frameCount = scene.getDuration() * fps;
+        Bitmap background = scene.getBackground();
+        List<Character> characters = scene.getCharactersByDepth();
 
-        int totalFrames = scene.getDuration() * FPS;
-
-        for (int i = 0; i < totalFrames; i++) {
-            Bitmap frameBitmap = Bitmap.createBitmap(bg.getWidth(), bg.getHeight(), Bitmap.Config.ARGB_8888);
+        for (int i = 0; i < frameCount; i++) {
+            Bitmap frameBitmap = Bitmap.createBitmap(background.getWidth(), background.getHeight(), Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(frameBitmap);
+            canvas.drawBitmap(background, 0, 0, null);
 
-            // Draw background
-            canvas.drawBitmap(bg, 0, 0, null);
-
-            // Render character frame for current frame index i
-            Bitmap charBitmap = renderer.renderCharacterFrame(mainChar, bg.getWidth(), bg.getHeight(), i, totalFrames);
-            canvas.drawBitmap(charBitmap, 0, 0, null);
-
-            frames.add(new VideoFrame(frameBitmap, i));
-
-            if (charBitmap != frameBitmap && !charBitmap.isRecycled()) {
-                charBitmap.recycle();
+            for (Character character : characters) {
+                try {
+                    // Try to load asset
+                    String assetPath = character.getAssetPath(character.getAction(), 64);
+                    Bitmap characterBitmap = BitmapFactory.decodeStream(context.getAssets().open(assetPath));
+                    float x = character.getPosition() != null ? character.getPosition().x : 100;
+                    float y = character.getPosition() != null ? character.getPosition().y : 100;
+                    canvas.drawBitmap(characterBitmap, x, y, null);
+                    characterBitmap.recycle();
+                } catch (Exception e) {
+                    Log.w(TAG, "Failed to load asset for " + character.getType() + ", using fallback", e);
+                    // Fallback to drawing a colored shape
+                    Paint paint = new Paint();
+                    paint.setColor(switch (character.getColor().toLowerCase()) {
+                        case "red" -> 0xFFFF0000;
+                        case "blue" -> 0xFF0000FF;
+                        case "green" -> 0xFF00FF00;
+                        case "yellow" -> 0xFFFFFF00;
+                        default -> 0xFF0000FF;
+                    });
+                    float x = character.getPosition() != null ? character.getPosition().x : 100;
+                    float y = character.getPosition() != null ? character.getPosition().y : 100;
+                    if (character.getType().equals("star")) {
+                        canvas.drawCircle(x, y, 50, paint);
+                    } else {
+                        canvas.drawRect(x, y, x + 50, y + 50, paint);
+                    }
+                }
             }
-        }
 
+            frames.add(new VideoFrame(frameBitmap, i * 1000 / fps));
+        }
         return frames;
     }
-}
+                        }
