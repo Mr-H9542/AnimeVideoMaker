@@ -27,6 +27,8 @@ import java.util.concurrent.Executors;
 
 import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtSession;
+import android.text.Editable;
+import android.text.TextWatcher;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
@@ -41,6 +43,7 @@ public class MainActivity extends AppCompatActivity {
 
     private OrtEnvironment ortEnv;
     private OrtSession textEncoderSession;
+
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -79,9 +82,19 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupPromptValidation() {
         promptInput.setHint("E.g., 'red star bounce on blue background for 5 seconds'");
-        promptInput.addTextChangedListener(new SimpleTextWatcher() {
+        promptInput.addTextChangedListener(new TextWatcher() {
             @Override
-            public void afterTextChanged(CharSequence s) {
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                // No action needed
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                // No action needed
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
                 validatePrompt(s.toString());
             }
         });
@@ -159,7 +172,7 @@ public class MainActivity extends AppCompatActivity {
                     validatePrompt(promptInput.getText().toString());
                     hideLoadingDialog();
                 });
-            } catch (Exception e){
+            } catch (Exception e) {
                 Log.e(TAG, "ONNX load error", e);
                 mainHandler.post(() -> {
                     hideLoadingDialog();
@@ -183,7 +196,7 @@ public class MainActivity extends AppCompatActivity {
                 mainHandler.post(() -> showError("Invalid prompt."));
                 return;
             }
-            // build scene and serialize
+
             try {
                 Scene scene = new Scene();
                 scene.configureFromRequest(req);
@@ -191,6 +204,7 @@ public class MainActivity extends AppCompatActivity {
                 try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(sceneFile))) {
                     oos.writeObject(scene);
                 }
+
                 Intent intent = new Intent(MainActivity.this, CharacterPreviewActivity.class);
                 intent.putExtra("scene_file_path", sceneFile.getAbsolutePath());
                 mainHandler.post(() -> {
@@ -213,13 +227,13 @@ public class MainActivity extends AppCompatActivity {
         if (txt != null) txt.setText(message);
     }
 
-    private void hideLoadingDialog(){
+    private void hideLoadingDialog() {
         if (loadingDialog != null && loadingDialog.isShowing()) {
             loadingDialog.dismiss();
         }
     }
 
-    private void showError(String msg){
+    private void showError(String msg) {
         welcomeText.setText(msg);
         Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
         btnRender.setEnabled(promptInput.getError() == null);
@@ -232,14 +246,14 @@ public class MainActivity extends AppCompatActivity {
         try {
             if (textEncoderSession != null) textEncoderSession.close();
             if (ortEnv != null) ortEnv.close();
-        } catch(Exception e){
+        } catch (Exception e) {
             Log.e(TAG, "Error closing ONNX", e);
         }
         executor.shutdownNow();
     }
 
     @Override
-    public void onRequestPermissionsResult(int code, @NonNull String[] perms, @NonNull int[] results){
+    public void onRequestPermissionsResult(int code, @NonNull String[] perms, @NonNull int[] results) {
         super.onRequestPermissionsResult(code, perms, results);
         if (code == PERMISSION_REQUEST_CODE) {
             if (Arrays.stream(results).allMatch(r -> r == PackageManager.PERMISSION_GRANTED)) {
@@ -249,4 +263,4 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
-            }
+                                 }
