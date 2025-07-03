@@ -4,14 +4,12 @@
     android:versionCode="1"
     android:versionName="1.0">
 
+    <!-- ✅ Minimum and target SDK -->
     <uses-sdk
         android:minSdkVersion="21"
         android:targetSdkVersion="34" />
 
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
+    <!-- ✅ Internet access for model downloading -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
@@ -23,7 +21,7 @@
         android:theme="@style/Theme.AnimeVideoMaker"
         tools:targetApi="34">
 
-        <!-- 👇 Main screen -->
+        <!-- ✅ Entry point -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -35,13 +33,8 @@
             </intent-filter>
         </activity>
 
-        <!-- 👇 Character Creator screen -->
         <activity android:name=".CharacterCreatorActivity" />
-
-        <!-- 👇 Scene Composer screen -->
         <activity android:name=".SceneComposerActivity" />
-
-        <!-- 👇 Preview renderer screen -->
         <activity android:name=".CharacterPreviewActivity" />
     </application>
 </manifest>
