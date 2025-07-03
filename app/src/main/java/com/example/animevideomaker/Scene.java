@@ -5,16 +5,29 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.os.AsyncTask;
+import android.graphics.PointF;
+import android.os.Handler;
+import android.os.Looper;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class Scene implements Serializable {
+
+    private static final int WIDTH = 720;
+    private static final int HEIGHT = 1280;
+
     private transient Bitmap background;
     private final List<Character> characters = new ArrayList<>();
     private int durationSeconds = 5;
+
+    // Threading
+    private static final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private static final Handler uiHandler = new Handler(Looper.getMainLooper());
 
     public Scene() {
         setBackgroundColor("black");
@@ -24,10 +37,8 @@ public class Scene implements Serializable {
         this.background = background;
     }
 
+    // Sets a solid background color
     public void setBackgroundColor(String colorName) {
-        int w = 720, h = 1280;
-        Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(bmp);
         int color = switch (colorName.toLowerCase()) {
             case "white" -> Color.WHITE;
             case "red" -> Color.RED;
@@ -35,6 +46,9 @@ public class Scene implements Serializable {
             case "gray" -> Color.GRAY;
             default -> Color.BLACK;
         };
+
+        Bitmap bmp = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bmp);
         canvas.drawColor(color);
         this.background = bmp;
     }
@@ -47,56 +61,74 @@ public class Scene implements Serializable {
         return background;
     }
 
+    // Overwrites characters list
     public void setCharacter(Character character) {
         characters.clear();
-        characters.add(character);
+        if (character != null) {
+            characters.add(character);
+        }
     }
 
     public void addCharacter(Character character) {
-        characters.add(character);
+        if (character != null) {
+            characters.add(character);
+        }
     }
 
     public List<Character> getCharactersByDepth() {
-        return characters;
+        return Collections.unmodifiableList(characters);
     }
 
     public void setDuration(int seconds) {
-        this.durationSeconds = Math.max(1, seconds);
+        this.durationSeconds = Math.max(1, seconds); // Avoid 0 or negative
     }
 
     public int getDuration() {
         return durationSeconds;
     }
 
+    // Configure scene from parsed AI prompt
     public void configureFromRequest(AnimationRequest req) {
-        setBackgroundColor(req.background.equals("default") ? "black" : req.background);
-        Character c = new Character("char_" + System.currentTimeMillis(), req.characterType, req.characterColor, req.action, new PointF(100, 100), true);
-        setCharacter(c);
+        if (req == null) return;
+
+        setBackgroundColor(req.background.equalsIgnoreCase("default") ? "black" : req.background);
+
+        Character character = new Character(
+                "char_" + System.currentTimeMillis(),
+                req.characterType,
+                req.characterColor,
+                req.action,
+                new PointF(100, 100),
+                true
+        );
+
+        setCharacter(character);
         setDuration(req.duration);
     }
 
+    /**
+     * Simulates frame generation for the scene.
+     * Replace this with actual animation logic if needed.
+     */
     public void generateFrames(Context context, Dialog loadingDialog, Runnable onComplete) {
-        new AsyncTask<Void, Void, Void>() {
-            @Override
-            protected void onPreExecute() {
-                loadingDialog.show();
+        if (loadingDialog != null) {
+            uiHandler.post(loadingDialog::show);
+        }
+
+        executor.execute(() -> {
+            try {
+                // Simulate time to generate animation
+                Thread.sleep(durationSeconds * 1000L);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
 
-            @Override
-            protected Void doInBackground(Void... voids) {
-                try {
-                    Thread.sleep(durationSeconds * 1000L);  // Simulate frame generation
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
+            uiHandler.post(() -> {
+                if (loadingDialog != null && loadingDialog.isShowing()) {
+                    loadingDialog.dismiss();
                 }
-                return null;
-            }
-
-            @Override
-            protected void onPostExecute(Void unused) {
-                loadingDialog.dismiss();
                 if (onComplete != null) onComplete.run();
-            }
-        }.execute();
+            });
+        });
     }
-    }
+                }
