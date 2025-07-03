@@ -312,4 +312,77 @@ public class MainActivity extends Activity {
             BufferedReader reader = new BufferedReader(new InputStreamReader(is));
             String line;
             while ((line = reader.readLine()) != null) {
-                if (line
+                if (line private void downloadFileFromGoogleDrive(String fileId, File destination) throws Exception {
+    String baseUrl = "https://drive.google.com/uc?export=download";
+
+    // First request to get confirmation token if needed
+    URL url = new URL(baseUrl + "&id=" + fileId);
+    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+    conn.setInstanceFollowRedirects(false);
+    conn.connect();
+
+    String confirmToken = getConfirmToken(conn);
+
+    InputStream inputStream;
+
+    if (confirmToken != null) {
+        // Second request with confirmation token to download file
+        String downloadUrl = baseUrl + "&confirm=" + confirmToken + "&id=" + fileId;
+        URL confirmedUrl = new URL(downloadUrl);
+        HttpURLConnection downloadConn = (HttpURLConnection) confirmedUrl.openConnection();
+        downloadConn.connect();
+        inputStream = downloadConn.getInputStream();
+    } else {
+        // No token needed, use initial input stream
+        inputStream = conn.getInputStream();
+    }
+
+    // Write input stream to file
+    try (FileOutputStream output = new FileOutputStream(destination)) {
+        byte[] buffer = new byte[4096];
+        int bytesRead;
+        while ((bytesRead = inputStream.read(buffer)) != -1) {
+            output.write(buffer, 0, bytesRead);
+        }
+    }
+    inputStream.close();
+}
+
+// Helper to parse confirmation token from cookies or page content
+private String getConfirmToken(HttpURLConnection conn) throws Exception {
+    // Check cookies for token
+    Map<String, List<String>> headers = conn.getHeaderFields();
+    List<String> cookies = headers.get("Set-Cookie");
+    if (cookies != null) {
+        for (String cookie : cookies) {
+            if (cookie.contains("download_warning")) {
+                // Example cookie: download_warning=some_token;
+                String[] parts = cookie.split(";");
+                for (String part : parts) {
+                    if (part.startsWith("download_warning")) {
+                        return part.split("=")[1];
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: parse token from HTML content (rarely needed)
+    try (InputStream is = conn.getInputStream();
+         BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
+        String line;
+        while ((line = reader.readLine()) != null) {
+            if (line.contains("confirm=")) {
+                int start = line.indexOf("confirm=") + 8;
+                int end = line.indexOf("&", start);
+                if (end == -1) end = line.indexOf("\"", start);
+                if (end != -1) {
+                    return line.substring(start, end);
+                }
+            }
+        }
+    } catch (Exception ignored) {
+    }
+
+    return null;
+                                         }
