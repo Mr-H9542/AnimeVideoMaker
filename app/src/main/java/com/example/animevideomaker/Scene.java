@@ -11,19 +11,23 @@ import android.os.Looper;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class Scene implements Serializable {
+
     private static final ExecutorService executor = Executors.newSingleThreadExecutor();
     private static final Handler uiHandler = new Handler(Looper.getMainLooper());
 
     private final int width;
     private final int height;
     private transient Bitmap background;
-    private final List<Character> characters = new ArrayList<>();
-    private int durationSeconds = 5;
+    private final List<Character> characters;
+    private int durationSeconds;
+
+    // === Constructors ===
 
     public Scene() {
         this(720, 1280);
@@ -32,8 +36,20 @@ public class Scene implements Serializable {
     public Scene(int width, int height) {
         this.width = width;
         this.height = height;
+        this.characters = new ArrayList<>();
+        this.durationSeconds = 5;
         setBackgroundColor("black");
     }
+
+    public Scene(Bitmap background) {
+        this.width = background.getWidth();
+        this.height = background.getHeight();
+        this.characters = new ArrayList<>();
+        this.durationSeconds = 5;
+        this.background = background;
+    }
+
+    // === Background ===
 
     public void setBackgroundColor(String colorName) {
         int color = switch (colorName.toLowerCase()) {
@@ -41,6 +57,7 @@ public class Scene implements Serializable {
             case "red" -> Color.RED;
             case "blue" -> Color.BLUE;
             case "gray" -> Color.GRAY;
+            case "yellow" -> Color.YELLOW;
             default -> Color.BLACK;
         };
         Bitmap bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
@@ -48,18 +65,49 @@ public class Scene implements Serializable {
         this.background = bmp;
     }
 
-    public void replaceWithCharacter(Character character) {
-        characters.clear();
+    public Bitmap getBackground() {
+        return background;
+    }
+
+    // === Characters ===
+
+    public void addCharacter(Character character) {
         if (character != null) {
             characters.add(character);
         }
     }
 
+    public void replaceWithCharacter(Character character) {
+        characters.clear();
+        addCharacter(character);
+    }
+
+    public List<Character> getCharacters() {
+        return Collections.unmodifiableList(characters);
+    }
+
+    public List<Character> getCharactersByDepth() {
+        // Future implementation: sort by depth if needed
+        return getCharacters();
+    }
+
+    // === Duration ===
+
+    public void setDuration(int seconds) {
+        this.durationSeconds = Math.max(1, seconds);
+    }
+
+    public int getDuration() {
+        return durationSeconds;
+    }
+
+    // === Request Configuration ===
+
     public void configureFromRequest(AnimationRequest req) {
         if (req == null) return;
 
         String bgColor = req.background == null || req.background.equalsIgnoreCase("default")
-                ? new AnimationRequest().background
+                ? "black"
                 : req.background;
 
         setBackgroundColor(bgColor);
@@ -77,21 +125,7 @@ public class Scene implements Serializable {
         setDuration(req.duration);
     }
 
-    public void setDuration(int seconds) {
-        this.durationSeconds = Math.max(1, seconds);
-    }
-
-    public int getDuration() {
-        return durationSeconds;
-    }
-
-    public Bitmap getBackground() {
-        return background;
-    }
-
-    public List<Character> getCharacters() {
-        return new ArrayList<>(characters);
-    }
+    // === Frame Generation (Mock/Async) ===
 
     public void generateFrames(Context context, Dialog loadingDialog, Runnable onComplete) {
         if (loadingDialog != null) {
@@ -100,6 +134,7 @@ public class Scene implements Serializable {
 
         executor.execute(() -> {
             try {
+                // Simulate long operation (e.g., generating video frames)
                 Thread.sleep(durationSeconds * 1000L);
             } catch (InterruptedException e) {
                 e.printStackTrace();
@@ -109,8 +144,10 @@ public class Scene implements Serializable {
                 if (loadingDialog != null && loadingDialog.isShowing()) {
                     loadingDialog.dismiss();
                 }
-                if (onComplete != null) onComplete.run();
+                if (onComplete != null) {
+                    onComplete.run();
+                }
             });
         });
     }
-                }
+        }
