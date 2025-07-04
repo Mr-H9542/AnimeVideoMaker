@@ -1,40 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    android:versionCode="1"
-    android:versionName="1.0">
+    package="com.example.animevideomaker">
 
-    <!-- ✅ Minimum and target SDK -->
+    <!-- ✅ Internet access for downloading assets -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- ✅ Optional: If using external storage or for debugging -->
+    <!-- <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" /> -->
+
+    <!-- ✅ SDK configuration -->
     <uses-sdk
         android:minSdkVersion="21"
         android:targetSdkVersion="34" />
 
-    <!-- ✅ Internet access for model downloading -->
-    <uses-permission android:name="android.permission.INTERNET" />
-
     <application
         android:allowBackup="true"
-        android:hardwareAccelerated="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:supportsRtl="true"
         android:theme="@style/Theme.AnimeVideoMaker"
+        android:hardwareAccelerated="true"
+        android:supportsRtl="true"
         tools:targetApi="34">
 
-        <!-- ✅ Entry point -->
+        <!-- ✅ Launcher/Main Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.AnimeVideoMaker.NoActionBar"
-            tools:ignore="LockedOrientationActivity">
+            android:theme="@style/Theme.AnimeVideoMaker.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
+        <!-- ✅ Other Activities -->
         <activity android:name=".CharacterCreatorActivity" />
         <activity android:name=".SceneComposerActivity" />
         <activity android:name=".CharacterPreviewActivity" />
+
     </application>
 </manifest>
