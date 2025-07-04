@@ -4,17 +4,15 @@ import android.content.Context;
 import android.os.AsyncTask;
 import android.util.Log;
 
+import com.example.animevideomaker.utils.ZipUtils;
+
 import java.io.BufferedInputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 
 import java.net.HttpURLConnection;
 import java.net.URL;
-
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 /**
  * Downloads and extracts assets.zip from GitHub Releases if not already present.
@@ -56,11 +54,29 @@ public class AssetDownloader {
         protected Boolean doInBackground(Void... voids) {
             try {
                 File zipFile = new File(context.getCacheDir(), ZIP_NAME);
+                File outputDir = new File(context.getFilesDir(), TARGET_FOLDER);
+
+                // Step 1: Download ZIP
                 downloadZipFile(ZIP_URL, zipFile);
-                unzip(zipFile.getAbsolutePath(), context.getFilesDir().getAbsolutePath());
+
+                // Step 2: Extract
+                ZipUtils.unzip(zipFile, outputDir);
+
+                // Step 3: Validate expected models
+                File textEncoder = new File(outputDir, "text_encoder/text_encoder_model.onnx");
+                File unet = new File(outputDir, "unet/model.onnx");
+
+                if (!textEncoder.exists()) {
+                    throw new Exception("Missing model: " + textEncoder.getAbsolutePath());
+                }
+                if (!unet.exists()) {
+                    throw new Exception("Missing model: " + unet.getAbsolutePath());
+                }
+
                 return true;
+
             } catch (Exception e) {
-                Log.e(TAG, "Error downloading/unzipping assets", e);
+                Log.e(TAG, "Asset setup failed", e);
                 error = e;
                 return false;
             }
@@ -85,49 +101,20 @@ public class AssetDownloader {
             throw new Exception("Server returned HTTP " + connection.getResponseCode());
         }
 
-        InputStream input = new BufferedInputStream(connection.getInputStream());
-        FileOutputStream output = new FileOutputStream(destination);
-
-        byte[] buffer = new byte[4096];
-        int count;
-        while ((count = input.read(buffer)) != -1) {
-            output.write(buffer, 0, count);
+        try (
+            InputStream input = new BufferedInputStream(connection.getInputStream());
+            FileOutputStream output = new FileOutputStream(destination)
+        ) {
+            byte[] buffer = new byte[4096];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                output.write(buffer, 0, count);
+            }
+            output.flush();
+        } finally {
+            connection.disconnect();
         }
-
-        output.flush();
-        output.close();
-        input.close();
-        connection.disconnect();
 
         Log.d(TAG, "Downloaded to: " + destination.getAbsolutePath());
     }
-
-    private static void unzip(String zipFilePath, String targetDirectoryPath) throws Exception {
-        ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFilePath)));
-        ZipEntry ze;
-
-        while ((ze = zis.getNextEntry()) != null) {
-            File file = new File(targetDirectoryPath, ze.getName());
-
-            if (ze.isDirectory()) {
-                file.mkdirs();
-            } else {
-                File parent = file.getParentFile();
-                if (!parent.exists()) parent.mkdirs();
-
-                FileOutputStream fout = new FileOutputStream(file);
-                byte[] buffer = new byte[4096];
-                int count;
-                while ((count = zis.read(buffer)) != -1) {
-                    fout.write(buffer, 0, count);
-                }
-                fout.close();
-            }
-
-            zis.closeEntry();
         }
-
-        zis.close();
-        Log.d(TAG, "Unzipped to: " + targetDirectoryPath);
-    }
-                }
